@@ -47,6 +47,22 @@ lib/useGame.ts  the single hook wiring the engine to React
 `lib/game/engine.ts` holds the only implementation of the move rules; the UI and
 the AI both call `applyMove`, so no mode rule exists in two places.
 
+## Deployment
+
+Pushing to `main` or a `ws01/**` branch builds a static export and publishes it to
+GitHub Pages via `.github/workflows/deploy-pages.yml`.
+
+The Pages settings are opt-in through the environment, so local work is unaffected:
+
+```bash
+npm run build                                   # ordinary Next.js build
+GITHUB_PAGES=true PAGES_BASE_PATH=/my-repo npm run build   # static export into out/
+```
+
+Pages serves the site from `/<repo>/`, which is why the export needs `basePath` and
+`assetPrefix`; the workflow derives them from `GITHUB_REPOSITORY`. This requires
+**Settings → Pages → Source: GitHub Actions** to be enabled once, by hand.
+
 ## Notes on the setup
 
 - PDS components are imported from `@porsche-design-system/components-react/ssr`,
