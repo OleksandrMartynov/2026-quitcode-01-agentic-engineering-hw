@@ -63,9 +63,83 @@ body {
   gap: var(--p-spacing-static-sm);
 }
 
+.stack--gap {
+  gap: var(--p-spacing-fluid-md);
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--p-spacing-static-sm);
+}
+
+.status {
+  gap: var(--p-spacing-static-sm);
+}
+
+.status__thinking {
+  gap: var(--p-spacing-static-xs);
+}
+
+/* ── Board ───────────────────────────────────────────────────────────── */
+
+.board {
+  display: grid;
+  gap: var(--p-spacing-static-sm);
+  width: min(100%, 420px);
+  margin: 0 auto;
+}
+
+.board__cell {
+  aspect-ratio: 1 / 1;
+  display: grid;
+}
+
+.board__mark {
+  font-size: clamp(1.75rem, 5vw, 2.75rem);
+  font-weight: var(--p-font-weight-bold);
+  line-height: 1;
+  transition: opacity var(--p-duration-sm) var(--p-ease-in-out);
+}
+
+.board__mark[data-mark='X'] {
+  color: var(--p-color-info);
+}
+
+.board__mark[data-mark='O'] {
+  color: var(--p-color-warning);
+}
+
+/* Cells on the winning line invert, so the mark follows the button colour. */
+.board__mark[data-won='true'] {
+  color: inherit;
+}
+
+/* The mark the vanishing rule will remove on its owner's next move. */
+.board__mark[data-doomed='true'] {
+  opacity: 0.3;
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────── */
+
+.scoreboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--p-spacing-static-sm);
+  text-align: center;
+}
+
+.scoreboard__entry {
+  background: var(--p-color-canvas);
+  border-radius: var(--p-radius-md);
+  padding: var(--p-spacing-static-sm);
+}
+
+.moves {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
 }
