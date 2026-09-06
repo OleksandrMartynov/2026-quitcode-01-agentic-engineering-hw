@@ -1,5 +1,5 @@
 /* Porsche Design System global styles (CSS variables + font-face are required). */
-@import '@porsche-design-system/components-react';
+@import '@porsche-design-system/components-react/index.css';
 
 /* Hide not-yet-upgraded custom elements, except the server-rendered ones. */
 :not(:defined, [data-ssr]) {
