@@ -1,9 +1,14 @@
-/* Porsche Design System global styles (required: variables + font-face). */
-@import '@porsche-design-system/components-react/index.css';
+/* Porsche Design System global styles (CSS variables + font-face are required). */
+@import '@porsche-design-system/components-react';
+
+/* Hide not-yet-upgraded custom elements, except the server-rendered ones. */
+:not(:defined, [data-ssr]) {
+  visibility: hidden;
+}
 
 /*
- * Only layout lives here. Every color, font, radius and spacing value comes
- * from a PDS token so the app follows the design system's light/dark palette.
+ * Only layout lives here. Every color, font, radius and spacing value is a PDS
+ * token, so the app follows the design system's light/dark palette.
  */
 
 body {
@@ -14,7 +19,7 @@ body {
 }
 
 .app {
-  max-width: 1180px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: var(--p-spacing-fluid-md) var(--p-spacing-fluid-md) var(--p-spacing-fluid-xl);
   display: flex;
@@ -25,7 +30,7 @@ body {
 .app__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--p-spacing-static-md);
 }
@@ -34,12 +39,12 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--p-spacing-fluid-md);
+  align-items: start;
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 1024px) {
   .app__layout {
-    grid-template-columns: 320px minmax(0, 1fr) 260px;
-    align-items: start;
+    grid-template-columns: 300px minmax(0, 1fr) 280px;
   }
 }
 
