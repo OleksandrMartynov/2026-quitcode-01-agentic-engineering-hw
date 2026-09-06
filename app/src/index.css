@@ -1,0 +1,66 @@
+/* Porsche Design System global styles (required: variables + font-face). */
+@import '@porsche-design-system/components-react/index.css';
+
+/*
+ * Only layout lives here. Every color, font, radius and spacing value comes
+ * from a PDS token so the app follows the design system's light/dark palette.
+ */
+
+body {
+  margin: 0;
+  background: var(--p-color-canvas);
+  color: var(--p-color-primary);
+  font-family: var(--p-font-porsche-next);
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--p-spacing-fluid-md) var(--p-spacing-fluid-md) var(--p-spacing-fluid-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-spacing-fluid-md);
+}
+
+.app__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--p-spacing-static-md);
+}
+
+.app__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--p-spacing-fluid-md);
+}
+
+@media (min-width: 1000px) {
+  .app__layout {
+    grid-template-columns: 320px minmax(0, 1fr) 260px;
+    align-items: start;
+  }
+}
+
+.panel {
+  background: var(--p-color-surface);
+  border-radius: var(--p-radius-lg);
+  padding: var(--p-spacing-static-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-spacing-static-md);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--p-spacing-static-sm);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--p-spacing-static-sm);
+}
