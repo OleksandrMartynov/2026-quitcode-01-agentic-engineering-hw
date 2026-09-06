@@ -19,6 +19,7 @@ export const createGame = (rawSettings: Settings): GameState => {
     outcome: { type: 'playing' },
     lines: buildLines(settings.size, settings.winLength),
     startedAt: Date.now(),
+    turnStartedAt: Date.now(),
   };
 };
 
@@ -66,6 +67,7 @@ export const applyMove = (state: GameState, index: number): GameState => {
     moves,
     outcome,
     current: outcome.type === 'playing' ? otherPlayer(player) : player,
+    turnStartedAt: Date.now(),
   };
 };
 

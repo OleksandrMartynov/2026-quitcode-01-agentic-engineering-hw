@@ -19,9 +19,9 @@ export const StatusBar = ({ game, secondsLeft, thinking }: Props) => {
   const headline = (() => {
     switch (outcome.type) {
       case 'win':
-        return `${nameOf(game, outcome.winner)} wins with ${settings.winLength} in a row`;
+        return `Winner: ${nameOf(game, outcome.winner)} · ${settings.winLength} in a row`;
       case 'timeout':
-        return `Time is up — ${nameOf(game, outcome.winner)} wins`;
+        return `Time is up · winner: ${nameOf(game, outcome.winner)}`;
       case 'draw':
         return 'Draw — the board is full';
       case 'playing':

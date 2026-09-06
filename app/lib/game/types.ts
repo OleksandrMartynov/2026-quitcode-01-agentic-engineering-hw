@@ -47,6 +47,8 @@ export type GameState = {
   /** Cells owned by each player in placement order — drives the vanishing rule. */
   queues: Record<Player, number[]>;
   outcome: Outcome;
+  /** Wall-clock start of the turn on the board, used by the blitz clock. */
+  turnStartedAt: number;
   /** Every winning line for this board geometry, precomputed once per game. */
   lines: number[][];
   startedAt: number;
@@ -110,7 +112,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     winLengths: (size) => (size === 4 ? [4] : [4, 5]),
     maxMarks: Number.POSITIVE_INFINITY,
     timed: false,
-    searchDepth: (emptyCells) => (emptyCells > 16 ? 3 : 4),
+    searchDepth: (emptyCells) => (emptyCells > 16 ? 4 : 5),
   },
   blitz: {
     label: 'Blitz',

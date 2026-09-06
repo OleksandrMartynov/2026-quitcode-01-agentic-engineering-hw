@@ -20,6 +20,9 @@ import type { GameState, MatchRecord, Scoreboard, Settings } from './game/types'
 /** Long enough for the AI move to read as a reply rather than a glitch. */
 const AI_THINKING_MS = 400;
 
+/** Clock refresh rate — fine enough that the last second never looks stuck. */
+const CLOCK_TICK_MS = 250;
+
 const toRecord = (game: GameState): MatchRecord => {
   const { outcome, settings } = game;
   const result = outcome.type === 'draw' ? 'draw' : outcome.type === 'playing' ? 'draw' : outcome.winner;
@@ -45,19 +48,22 @@ export const useGame = () => {
   const [game, setGame] = useState<GameState>(() => createGame(DEFAULT_SETTINGS));
   const [history, setHistory] = useState<MatchRecord[]>([]);
   const [scoreboard, setScoreboard] = useState<Scoreboard>(EMPTY_SCOREBOARD);
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [hydrated, setHydrated] = useState(false);
   const recordedRef = useRef<string | null>(null);
 
   // Stored state is read after mount so the server and the first client render
-  // produce identical markup.
+  // produce identical markup. This is the one place where a synchronous
+  // setState in an effect is the correct SSR-safe pattern.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- see comment above */
     const stored = loadSettings();
     setSettings(stored);
     setGame(createGame(stored));
     setHistory(loadHistory());
     setScoreboard(loadScoreboard());
     setHydrated(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   useEffect(() => {
@@ -101,24 +107,29 @@ export const useGame = () => {
     return () => window.clearTimeout(timer);
   }, [aiTurn, game.id, game.moves.length]);
 
-  // Blitz clock: it runs only while a human is on turn, and restarts on every move.
+  // Blitz clock: it runs only while a human is on turn, and restarts on every
+  // move. The remaining time is derived from the turn's timestamp rather than
+  // counted down in state, so a slow frame cannot lose a second.
   const clockRunning = MODES[settings.mode].timed && game.outcome.type === 'playing' && !aiTurn;
 
-  useEffect(() => {
-    if (!clockRunning) {
-      setSecondsLeft(null);
-      return;
-    }
-    setSecondsLeft(settings.turnSeconds);
-    const ticker = window.setInterval(() => {
-      setSecondsLeft((previous) => (previous === null ? null : Math.max(0, previous - 1)));
-    }, 1000);
-    return () => window.clearInterval(ticker);
-  }, [clockRunning, settings.turnSeconds, game.id, game.moves.length]);
+  const secondsLeft = clockRunning
+    ? Math.min(
+        settings.turnSeconds,
+        Math.max(0, Math.ceil((game.turnStartedAt + settings.turnSeconds * 1000 - now) / 1000))
+      )
+    : null;
 
   useEffect(() => {
-    if (secondsLeft === 0) setGame((current) => applyTimeout(current));
-  }, [secondsLeft]);
+    if (!clockRunning) return;
+    const ticker = window.setInterval(() => {
+      const moment = Date.now();
+      setNow(moment);
+      if (moment >= game.turnStartedAt + settings.turnSeconds * 1000) {
+        setGame((current) => applyTimeout(current));
+      }
+    }, CLOCK_TICK_MS);
+    return () => window.clearInterval(ticker);
+  }, [clockRunning, settings.turnSeconds, game.turnStartedAt]);
 
   // A finished game is written to the history exactly once. Rewinding a
   // finished game clears the guard so the replayed result is recorded again.

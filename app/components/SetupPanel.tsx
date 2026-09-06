@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import {
   PButton,
@@ -29,8 +29,14 @@ type Props = {
 
 export const SetupPanel = ({ settings, onStart, onRestart }: Props) => {
   const [draft, setDraft] = useState<Settings>(settings);
+  const [applied, setApplied] = useState<Settings>(settings);
 
-  useEffect(() => setDraft(settings), [settings]);
+  // When a game starts with different settings, the form follows. Adjusting
+  // state during render is React's recommended alternative to a sync effect.
+  if (applied !== settings) {
+    setApplied(settings);
+    setDraft(settings);
+  }
 
   const update = (patch: Partial<Settings>) =>
     setDraft((current) => normalizeSettings({ ...current, ...patch }));
