@@ -1,0 +1,5 @@
+:HL["/2026-quitcode-01-agentic-engineering-hw/_next/static/chunks/29he55yu3c28y.css","style"]
+:HL["https://cdn.ui.porsche.com/porsche-design-system/components/porsche-design-system.v4.6.0.41e2f497a23ccd77e257.js","script",{"crossOrigin":""}]
+:HL["https://cdn.ui.porsche.com/porsche-design-system/fonts/porsche-next-latin-regular.b8f1c20.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["https://cdn.ui.porsche.com/porsche-design-system/fonts/porsche-next-latin-semi-bold.b5f6fca.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+0:{"tree":{"name":"","param":null,"prefetchHints":4176,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":4256,"slots":null}}},"staleTime":300,"buildId":"RBSzzqsORdOHtmo5rcClV"}
