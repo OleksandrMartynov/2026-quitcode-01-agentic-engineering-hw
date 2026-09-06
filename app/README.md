@@ -49,19 +49,22 @@ the AI both call `applyMove`, so no mode rule exists in two places.
 
 ## Deployment
 
-Pushing to `main` or a `ws01/**` branch builds a static export and publishes it to
-GitHub Pages via `.github/workflows/deploy-pages.yml`.
-
-The Pages settings are opt-in through the environment, so local work is unaffected:
+The app is published to GitHub Pages by hand — there is no CI for it. Pages is
+configured as *Deploy from a branch* on `main` / root, so a release means building
+the static export and copying it into the repository root of `main`.
 
 ```bash
-npm run build                                   # ordinary Next.js build
-GITHUB_PAGES=true PAGES_BASE_PATH=/my-repo npm run build   # static export into out/
+GITHUB_PAGES=true PAGES_BASE_PATH=/2026-quitcode-01-agentic-engineering-hw npm run build
 ```
 
-Pages serves the site from `/<repo>/`, which is why the export needs `basePath` and
-`assetPrefix`; the workflow derives them from `GITHUB_REPOSITORY`. This requires
-**Settings → Pages → Source: GitHub Actions** to be enabled once, by hand.
+The Pages settings are opt-in through the environment, so plain `npm run build` and
+local development stay an ordinary Next.js build. Two details matter for the
+branch-based Pages mode:
+
+- Pages serves the site from `/<repo>/`, hence `basePath` and `assetPrefix`.
+- A `.nojekyll` file must sit next to `index.html`. Next puts its assets in
+  `_next/`, and Jekyll skips every path starting with an underscore — without it
+  the page loads with no CSS and no JavaScript.
 
 ## Notes on the setup
 
