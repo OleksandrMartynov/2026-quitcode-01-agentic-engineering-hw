@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   HISTORY_LIMIT,
+  isEmptyHistoryValue,
   loadHistory,
   loadScoreboard,
   loadSettings,
@@ -198,6 +199,18 @@ describe('parseSettings', () => {
       size: 3,
       winLength: 3,
     });
+  });
+});
+
+describe('isEmptyHistoryValue', () => {
+  it.each([
+    [null, true],
+    ['[]', true],
+    ['not json', true],
+    ['[{"id":"broken"}]', true],
+    [JSON.stringify([validRecord()]), false],
+  ])('%s → %s', (raw, expected) => {
+    expect(isEmptyHistoryValue(raw)).toBe(expected);
   });
 });
 

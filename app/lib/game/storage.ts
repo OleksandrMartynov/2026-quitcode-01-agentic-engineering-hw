@@ -199,6 +199,20 @@ const write = (key: string, value: unknown): void => {
   }
 };
 
+/**
+ * True when a stored history value (e.g. a storage event's `newValue`) holds
+ * no records: the history was cleared. Eviction by HISTORY_LIMIT never empties
+ * it, so an empty history means the score was reset too.
+ */
+export const isEmptyHistoryValue = (raw: string | null): boolean => {
+  if (raw === null) return true;
+  try {
+    return parseHistory(JSON.parse(raw) as unknown).length === 0;
+  } catch {
+    return true;
+  }
+};
+
 export const loadSettings = (): Settings => parseSettings(read(KEYS.settings));
 
 export const saveSettings = (settings: Settings): void => write(KEYS.settings, settings);

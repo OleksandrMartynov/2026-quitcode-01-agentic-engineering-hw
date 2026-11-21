@@ -29,11 +29,15 @@ const typeCheck = (appPath, batch) => {
     execSync('npx tsc --noEmit', { cwd: appPath, stdio: 'pipe' });
   } catch (error) {
     output = String(error.stdout ?? '');
-    // tsc exits non-zero both for type errors and for failing to run at all.
-    // Only the first produces diagnostics; anything else is a broken check,
-    // which must not be reported as "0 errors".
-    if (!/error TS\d+/.test(output)) {
-      throw new Error(`tsc did not run in ${appPath}: ${String(error.stderr ?? error.message)}`);
+    // tsc exits non-zero both for type errors and for failing to check at all.
+    // Only per-file diagnostics, "path(line,col): error TS…", mean the files
+    // were checked. No diagnostics (npx failed) or a global one such as
+    // TS18003 "No inputs were found" is a broken check, never "0 errors".
+    const diagnostics = output.split('\n').filter((line) => /error TS\d+/.test(line));
+    const global = diagnostics.filter((line) => !/\(\d+,\d+\): error TS\d+/.test(line));
+    if (diagnostics.length === 0 || global.length > 0) {
+      const reason = global.join('\n') || String(error.stderr ?? error.message);
+      throw new Error(`tsc could not check the files in ${appPath}:\n${reason}`);
     }
   } finally {
     rmSync(target, { recursive: true, force: true });

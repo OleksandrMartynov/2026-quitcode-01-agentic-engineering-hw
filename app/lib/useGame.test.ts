@@ -264,10 +264,12 @@ describe('two open tabs', () => {
       id: `other-${i}`,
       moves: null,
     }));
-    window.localStorage.setItem('ttt-lab:history', JSON.stringify(others));
+    // Like a real browser, the event carries the new value.
+    const newValue = JSON.stringify(others);
+    window.localStorage.setItem('ttt-lab:history', newValue);
     window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 26, O: 0, draws: 0 }));
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history' }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
     });
     expect(result.current.history.some((record) => record.id === result.current.game.id)).toBe(false);
 
@@ -287,7 +289,12 @@ describe('two open tabs', () => {
     for (const cell of [0, 3, 1, 4, 2]) act(() => tabA.result.current.play(cell));
     // The browser tells the other tab that localStorage changed.
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history' }));
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'ttt-lab:history',
+          newValue: window.localStorage.getItem('ttt-lab:history'),
+        })
+      );
     });
     expect(tabB.result.current.history).toHaveLength(1);
 
@@ -296,6 +303,34 @@ describe('two open tabs', () => {
 
     expect(stored('scoreboard')).toEqual({ X: 1, O: 1, draws: 0 });
     expect((stored('history') as unknown[]).length).toBe(2);
+  });
+
+  it('forgets the counted result when another tab clears the history', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+    const won = result.current.history[0];
+
+    // Another tab clears everything...
+    const send = (key: string, value: unknown) => {
+      const newValue = JSON.stringify(value);
+      window.localStorage.setItem(key, newValue);
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue }));
+      });
+    };
+    send('ttt-lab:history', []);
+    send('ttt-lab:scoreboard', { X: 0, O: 0, draws: 0 });
+    // ...and then records an X win of its own.
+    send('ttt-lab:history', [{ ...won, id: 'other-tab-game' }]);
+    send('ttt-lab:scoreboard', { X: 1, O: 0, draws: 0 });
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+
+    // This tab's old X win was cleared, so replaying its game must not take
+    // the other tab's X win away.
+    act(() => result.current.rewind(4));
+    for (const cell of [8, 5]) act(() => result.current.play(cell));
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 1, draws: 0 });
   });
 
   it('ignores changes to unrelated keys', () => {
