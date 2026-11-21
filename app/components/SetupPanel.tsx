@@ -12,14 +12,28 @@ import {
   PSelectOption,
   PText,
 } from '@porsche-design-system/components-react/ssr';
-import { MODES, TURN_SECONDS_OPTIONS, normalizeSettings } from '@/lib/game/types';
-import type { Difficulty, GameMode, Opponent, Settings } from '@/lib/game/types';
+import {
+  DIFFICULTY_LEVELS,
+  MODES,
+  NAME_MAX_LENGTH,
+  TURN_SECONDS_OPTIONS,
+  normalizeSettings,
+} from '@/lib/game/types';
+import type { Difficulty, GameMode, ModeConfig, Opponent, Settings } from '@/lib/game/types';
 
-const DIFFICULTIES: { value: Difficulty; label: string }[] = [
-  { value: 'easy', label: 'Easy — plays at random' },
-  { value: 'medium', label: 'Medium — wins and blocks' },
-  { value: 'hard', label: 'Hard — full minimax search' },
-];
+/** The hard label depends on the mode: only some modes are searched to the end. */
+const difficultyLabel = (difficulty: Difficulty, config: ModeConfig): string => {
+  switch (difficulty) {
+    case 'easy':
+      return 'Easy — plays at random';
+    case 'medium':
+      return 'Medium — wins and blocks';
+    case 'hard':
+      return config.exhaustiveSearch
+        ? 'Hard — full minimax search, unbeatable'
+        : 'Hard — depth-limited minimax';
+  }
+};
 
 type Props = {
   settings: Settings;
@@ -134,9 +148,9 @@ export const SetupPanel = ({ settings, onStart, onRestart }: Props) => {
           value={draft.difficulty}
           onChange={(event) => update({ difficulty: event.detail.value as Difficulty })}
         >
-          {DIFFICULTIES.map(({ value, label }) => (
-            <PSelectOption key={value} value={value}>
-              {label}
+          {DIFFICULTY_LEVELS.map((level) => (
+            <PSelectOption key={level} value={level}>
+              {difficultyLabel(level, config)}
             </PSelectOption>
           ))}
         </PSelect>
@@ -146,14 +160,14 @@ export const SetupPanel = ({ settings, onStart, onRestart }: Props) => {
         name="playerXName"
         label="Player X"
         value={draft.playerXName}
-        maxLength={16}
+        maxLength={NAME_MAX_LENGTH}
         onInput={(event) => update({ playerXName: (event.target as HTMLInputElement).value })}
       />
       <PInputText
         name="playerOName"
         label={draft.opponent === 'ai' ? 'Computer' : 'Player O'}
         value={draft.playerOName}
-        maxLength={16}
+        maxLength={NAME_MAX_LENGTH}
         onInput={(event) => update({ playerOName: (event.target as HTMLInputElement).value })}
       />
 

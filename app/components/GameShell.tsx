@@ -48,7 +48,7 @@ export const GameShell = () => {
 
           <Board game={game} onPlay={play} locked={aiTurn} />
 
-          {MODES[settings.mode].maxMarks !== Number.POSITIVE_INFINITY && (
+          {Number.isFinite(MODES[game.settings.mode].maxMarks) && (
             <PInlineNotification
               state="info"
               heading="Vanishing rule"
@@ -71,11 +71,11 @@ export const GameShell = () => {
 
         <div className="stack stack--gap">
           <Scoreboard scoreboard={scoreboard} settings={settings} />
-          <MoveHistory game={game} onRewind={rewind} humanOnly={settings.opponent === 'ai'} />
+          <MoveHistory game={game} onRewind={rewind} humanOnly={game.settings.opponent === 'ai'} />
         </div>
       </div>
 
-      <MatchHistory history={history} settings={settings} onClear={clearHistory} />
+      <MatchHistory history={history} onClear={clearHistory} />
     </main>
   );
 };

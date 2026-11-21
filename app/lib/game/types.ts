@@ -2,9 +2,17 @@ export type Player = 'X' | 'O';
 export type Cell = Player | null;
 export type Board = Cell[];
 
-export type GameMode = 'classic' | 'vanishing' | 'grand' | 'blitz';
-export type Difficulty = 'easy' | 'medium' | 'hard';
-export type Opponent = 'human' | 'ai';
+/*
+ * The literal unions are derived from runtime arrays so that the storage layer
+ * can validate untrusted input against exactly the same set of values.
+ */
+export const GAME_MODES = ['classic', 'vanishing', 'grand', 'blitz'] as const;
+export const DIFFICULTY_LEVELS = ['easy', 'medium', 'hard'] as const;
+export const OPPONENTS = ['ai', 'human'] as const;
+
+export type GameMode = (typeof GAME_MODES)[number];
+export type Difficulty = (typeof DIFFICULTY_LEVELS)[number];
+export type Opponent = (typeof OPPONENTS)[number];
 
 /** The human always plays X; the AI opponent always plays O. */
 export const HUMAN: Player = 'X';
@@ -62,6 +70,8 @@ export type MatchRecord = {
   difficulty: Difficulty | null;
   size: number;
   winLength: number;
+  /** Player names as they were when the game was played. */
+  players: Record<Player, string>;
   result: Player | 'draw';
   reason: 'line' | 'draw' | 'timeout';
   moveCount: number;
@@ -82,6 +92,12 @@ export type ModeConfig = {
   timed: boolean;
   /** How deep the hard AI is allowed to search in this mode. */
   searchDepth: (emptyCells: number) => number;
+  /**
+   * True when `searchDepth` always reaches the end of the game, i.e. the hard
+   * AI plays perfectly. Drives the difficulty label, so the UI never promises a
+   * full search where the depth is capped.
+   */
+  exhaustiveSearch: boolean;
 };
 
 export const MODES: Record<GameMode, ModeConfig> = {
@@ -94,6 +110,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     timed: false,
     // 3x3 is small enough to search exhaustively, which makes hard unbeatable.
     searchDepth: (emptyCells) => emptyCells,
+    exhaustiveSearch: true,
   },
   vanishing: {
     label: 'Vanishing',
@@ -104,6 +121,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     timed: false,
     // The board never fills up, so the tree is infinite without a cap.
     searchDepth: () => 6,
+    exhaustiveSearch: false,
   },
   grand: {
     label: 'Grand',
@@ -113,6 +131,7 @@ export const MODES: Record<GameMode, ModeConfig> = {
     maxMarks: Number.POSITIVE_INFINITY,
     timed: false,
     searchDepth: (emptyCells) => (emptyCells > 16 ? 4 : 5),
+    exhaustiveSearch: false,
   },
   blitz: {
     label: 'Blitz',
@@ -122,10 +141,13 @@ export const MODES: Record<GameMode, ModeConfig> = {
     maxMarks: Number.POSITIVE_INFINITY,
     timed: true,
     searchDepth: (emptyCells) => emptyCells,
+    exhaustiveSearch: true,
   },
 };
 
 export const TURN_SECONDS_OPTIONS = [5, 10, 20] as const;
+
+export const NAME_MAX_LENGTH = 16;
 
 export const DEFAULT_SETTINGS: Settings = {
   mode: 'classic',
@@ -138,11 +160,43 @@ export const DEFAULT_SETTINGS: Settings = {
   playerOName: 'Rival',
 };
 
-/** Clamps size/winLength to what the chosen mode actually allows. */
+/**
+ * Clamps every bounded field to what the chosen mode allows. Safe to call on
+ * each keystroke: it never touches the free-text player names.
+ */
 export const normalizeSettings = (settings: Settings): Settings => {
-  const config = MODES[settings.mode];
+  const mode = (GAME_MODES as readonly string[]).includes(settings.mode)
+    ? settings.mode
+    : DEFAULT_SETTINGS.mode;
+  const config = MODES[mode];
   const size = config.sizes.includes(settings.size) ? settings.size : config.sizes[0];
   const winLengths = config.winLengths(size);
   const winLength = winLengths.includes(settings.winLength) ? settings.winLength : winLengths[0];
-  return { ...settings, size, winLength };
+  const turnSeconds = (TURN_SECONDS_OPTIONS as readonly number[]).includes(settings.turnSeconds)
+    ? settings.turnSeconds
+    : DEFAULT_SETTINGS.turnSeconds;
+  const opponent = (OPPONENTS as readonly string[]).includes(settings.opponent)
+    ? settings.opponent
+    : DEFAULT_SETTINGS.opponent;
+  const difficulty = (DIFFICULTY_LEVELS as readonly string[]).includes(settings.difficulty)
+    ? settings.difficulty
+    : DEFAULT_SETTINGS.difficulty;
+  return { ...settings, mode, size, winLength, turnSeconds, opponent, difficulty };
+};
+
+/** Trims a player name and falls back when it ends up empty or is not a string. */
+export const cleanName = (value: unknown, fallback: string): string => {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim().slice(0, NAME_MAX_LENGTH).trim();
+  return trimmed === '' ? fallback : trimmed;
+};
+
+/** Full clean-up for settings that are about to start a game. */
+export const finalizeSettings = (settings: Settings): Settings => {
+  const normalized = normalizeSettings(settings);
+  return {
+    ...normalized,
+    playerXName: cleanName(normalized.playerXName, DEFAULT_SETTINGS.playerXName),
+    playerOName: cleanName(normalized.playerOName, DEFAULT_SETTINGS.playerOName),
+  };
 };

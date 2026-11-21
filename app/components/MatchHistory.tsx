@@ -14,11 +14,10 @@ import {
   PText,
 } from '@porsche-design-system/components-react/ssr';
 import { MODES } from '@/lib/game/types';
-import type { MatchRecord, Settings } from '@/lib/game/types';
+import type { MatchRecord } from '@/lib/game/types';
 
 type Props = {
   history: MatchRecord[];
-  settings: Settings;
   onClear: () => void;
 };
 
@@ -38,13 +37,15 @@ const formatDuration = (ms: number): string => {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
-export const MatchHistory = ({ history, settings, onClear }: Props) => {
-  const resultLabel = (record: MatchRecord): string => {
-    if (record.result === 'draw') return 'Draw';
-    const name = record.result === 'X' ? settings.playerXName : settings.playerOName;
-    return record.reason === 'timeout' ? `${name} (on time)` : name;
-  };
+// Names come from the record itself, so renaming a player later does not
+// rewrite who won the games already played.
+const resultLabel = (record: MatchRecord): string => {
+  if (record.result === 'draw') return 'Draw';
+  const name = record.players[record.result];
+  return record.reason === 'timeout' ? `${name} (on time)` : name;
+};
 
+export const MatchHistory = ({ history, onClear }: Props) => {
   return (
     <section className="panel">
       <div className="app__header">

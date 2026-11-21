@@ -1,9 +1,9 @@
-import { applyMove, isPlayable } from './engine';
+import { applyMove } from './engine';
 import { otherPlayer } from './rules';
+import { EMPTY, code, createSearch, doMove, isFull, undoMove, wonAt } from './search';
+import type { Search } from './search';
 import { MODES } from './types';
-import type { GameState, Player } from './types';
-
-const EMPTY = 0;
+import type { GameState } from './types';
 
 /** How much an open line is worth per mark already in it: 1, 10, 100, 1000... */
 const lineWeight = (marks: number): number => 10 ** (marks - 1);
@@ -27,73 +27,6 @@ const centerFirst = (cells: number[], size: number): number[] => {
 };
 
 const pickRandom = <T,>(items: T[]): T => items[Math.floor(Math.random() * items.length)];
-
-/**
- * Fast mutable mirror of the engine used only inside the search: the same
- * place-then-vanish-then-check order as `applyMove`, but with do/undo on a
- * typed array instead of cloning a GameState for every node.
- */
-type Search = {
-  board: Int8Array;
-  queues: [number[], number[]];
-  linesByCell: number[][];
-  lines: number[][];
-  maxMarks: number;
-  size: number;
-};
-
-const code = (player: Player): 1 | 2 => (player === 'X' ? 1 : 2);
-
-const createSearch = (state: GameState): Search => {
-  const board = new Int8Array(state.board.length);
-  state.board.forEach((cell, index) => {
-    board[index] = cell === null ? EMPTY : code(cell);
-  });
-
-  const linesByCell: number[][] = Array.from({ length: board.length }, () => []);
-  state.lines.forEach((line, lineIndex) => {
-    for (const cell of line) linesByCell[cell].push(lineIndex);
-  });
-
-  return {
-    board,
-    queues: [[...state.queues.X], [...state.queues.O]],
-    linesByCell,
-    lines: state.lines,
-    maxMarks: MODES[state.settings.mode].maxMarks,
-    size: state.settings.size,
-  };
-};
-
-const doMove = (search: Search, cell: number, player: 1 | 2): number => {
-  search.board[cell] = player;
-  const queue = search.queues[player - 1];
-  queue.push(cell);
-  if (queue.length > search.maxMarks) {
-    const removed = queue.shift() as number;
-    search.board[removed] = EMPTY;
-    return removed;
-  }
-  return -1;
-};
-
-const undoMove = (search: Search, cell: number, player: 1 | 2, removed: number): void => {
-  const queue = search.queues[player - 1];
-  if (removed >= 0) {
-    search.board[removed] = player;
-    queue.unshift(removed);
-  }
-  queue.pop();
-  search.board[cell] = EMPTY;
-};
-
-/** Only lines through the played cell can have been completed by that move. */
-const wonAt = (search: Search, cell: number, player: 1 | 2): boolean =>
-  search.linesByCell[cell].some((lineIndex) =>
-    search.lines[lineIndex].every((index) => search.board[index] === player)
-  );
-
-const isFull = (search: Search): boolean => !search.board.includes(EMPTY);
 
 /** Static evaluation from the maximizing player's point of view. */
 const evaluate = (search: Search, me: 1 | 2): number => {
@@ -247,5 +180,3 @@ export const chooseMove = (state: GameState): number => {
       return chooseHard(state);
   }
 };
-
-export const canMove = (state: GameState, index: number): boolean => isPlayable(state, index);
