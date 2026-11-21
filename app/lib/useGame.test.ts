@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from './game/types';
 import type { Settings } from './game/types';
@@ -21,7 +21,12 @@ beforeEach(() => {
   vi.useFakeTimers();
 });
 
-afterEach(() => vi.useRealTimers());
+// Without vitest globals, Testing Library does not unmount on its own: hooks
+// from earlier tests would stay mounted and keep reacting to storage events.
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('useGame with a corrupted localStorage', () => {
   it('mounts, drops the bad entries and heals what is stored', () => {
@@ -398,6 +403,40 @@ describe('two open tabs', () => {
     }
 
     expect(seenBySignal).toEqual({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
+  });
+
+  it('never writes back stats it adopted from another tab', () => {
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 1, O: 0, draws: 0 }));
+    const { result } = mount();
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+
+    // Another tab clears: this tab hears about the history first, and — as can
+    // happen across processes — still reads the old score at that moment,
+    // although the zeros have already been stored.
+    window.localStorage.setItem('ttt-lab:history', '[]');
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 0, draws: 0 }));
+    const getItem = Storage.prototype.getItem;
+    let stale = true;
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (
+      this: Storage,
+      key: string
+    ) {
+      if (stale && key === 'ttt-lab:scoreboard') {
+        stale = false;
+        return JSON.stringify({ X: 1, O: 0, draws: 0 });
+      }
+      return getItem.call(this, key);
+    });
+    try {
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue: '[]' }));
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The stale score may be shown for a moment, but it must not be stored.
+    expect(stored('scoreboard')).toEqual({ X: 0, O: 0, draws: 0 });
   });
 
   it('ignores changes to unrelated keys', () => {

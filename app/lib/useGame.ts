@@ -38,6 +38,8 @@ export const useGame = () => {
    * score still contains it.
    */
   const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
+  /** The last stats taken over from another tab — never persisted from here. */
+  const adoptedRef = useRef<MatchStats | null>(null);
   /**
    * A hint belongs to the exact position it was computed for. Keying it by the
    * game object (every move, rewind or restart creates a new one) makes a
@@ -66,8 +68,12 @@ export const useGame = () => {
     if (hydrated) saveSettings(settings);
   }, [settings, hydrated]);
 
+  // A tab stores only its OWN changes. Stats adopted from another tab are
+  // already in storage — and may be a stale mix read while that tab was still
+  // writing — so writing them back could resurrect data the other tab has
+  // just replaced (e.g. the old score after a clear).
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || stats === adoptedRef.current) return;
     saveHistory(stats.history);
     saveScoreboard(stats.scoreboard);
   }, [stats, hydrated]);
@@ -86,7 +92,9 @@ export const useGame = () => {
       if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
         countedRef.current = null;
       }
-      setStats({ history: loadHistory(), scoreboard: loadScoreboard() });
+      const adopted = { history: loadHistory(), scoreboard: loadScoreboard() };
+      adoptedRef.current = adopted;
+      setStats(adopted);
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);

@@ -103,8 +103,10 @@ position reproduces the stored result (winner, draw, or the player who ran out
 of time). A record that contradicts its own moves is dropped.
 
 Two open tabs share one history: each tab listens for the `storage` event and
-adopts the other's changes before writing its own, and identical writes are
-skipped so the tabs do not echo each other. *Clear history* also bumps a
+adopts the other's changes before writing its own. A tab stores **only its own
+changes** — stats adopted from another tab are never written back, so a stale
+mix read while the other tab was mid-write cannot overwrite newer data — and
+identical writes are skipped. *Clear history* also bumps a
 dedicated `ttt-lab:cleared-at` key — an explicit clear signal — and only that
 signal makes the other tabs forget what their current game added to the score.
 A clear is never inferred from the history's content: corrupted data repaired
@@ -121,7 +123,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 164 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 165 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below 95 % of lines.
 
 | File | What it pins down |
