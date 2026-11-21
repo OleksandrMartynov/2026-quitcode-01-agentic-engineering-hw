@@ -5,11 +5,16 @@ Four game modes and a minimax opponent, built on the
 Workshop 1 of the QuitCode "Modern Development with Agentic AI" course.
 
 ```bash
-npm install
-npm run dev     # http://localhost:3000
+npm ci
+npm run dev        # http://localhost:3000
 npm run build
 npm run lint
+npm run typecheck  # next typegen + tsc --noEmit
+npm test           # vitest: unit, regression and AI verification checks
+npm run check      # all of the above, in the order CI runs them
 ```
+
+Node 22+ is required.
 
 ## Modes
 
@@ -30,31 +35,81 @@ one screen, or the computer at one of three levels.
 - **Easy** — a uniformly random empty cell.
 - **Medium** — win now, else block the immediate threat, else centre, corner, random.
 - **Hard** — minimax with alpha-beta pruning, depth-aware scoring (a faster win
-  beats a slower one) and centre-out move ordering. On 3x3 the search is
-  exhaustive, which makes it unbeatable; on the larger boards and in Vanishing —
-  where the board never fills and the tree has no natural end — the depth is
-  capped and non-terminal positions get a heuristic score based on open lines.
+  beats a slower one) and centre-out move ordering. In Classic and Blitz the
+  search is exhaustive, which makes it unbeatable. In Grand (depth 4–5) and in
+  Vanishing (depth 6 — the board never fills, so the tree has no natural end)
+  the depth is capped and non-terminal positions get a heuristic score based on
+  open lines: strong, but not perfect. The difficulty picker says which of the
+  two you get (`ModeConfig.exhaustiveSearch`).
 
 ## Structure
 
 ```
-app/          Next.js App Router entry (server components, PDS provider)
-components/   UI, built from PDS components
-lib/game/     rules, engine, AI, localStorage — framework-free and pure
-lib/useGame.ts  the single hook wiring the engine to React
+app/                Next.js App Router entry (server components, PDS provider)
+components/         UI, built from PDS components
+lib/game/           framework-free, pure TypeScript
+  types.ts          settings, mode table, normalization
+  rules.ts          line generation and win detection
+  engine.ts         applyMove / rewindTo / applyTimeout — the source of truth
+  search.ts         a fast mutable mirror of the move rules for the AI search
+  ai.ts             easy / medium / hard move choice
+  stats.ts          match records and the scoreboard
+  storage.ts        localStorage with validation of everything it reads
+  __checks__/       AI verification games and shared test helpers
+lib/useGame.ts      the single hook wiring the engine, timers and storage to React
 ```
 
-`lib/game/engine.ts` holds the only implementation of the move rules; the UI and
-the AI both call `applyMove`, so no mode rule exists in two places.
+### Where the move rules live
+
+`lib/game/engine.ts#applyMove` is the authoritative implementation; the UI and
+the medium AI go through it. The hard AI cannot afford to clone a `GameState`
+for every node of the search, so `lib/game/search.ts` re-implements the same
+place → vanish → check order with do/undo on a typed array. **When you change a
+rule, change both.** `search.test.ts` plays 1 200 random games across every
+mode and board and fails on the first position where the two disagree.
+
+### Stored data
+
+History, scoreboard and settings live in `localStorage`, which is untrusted
+input: `storage.ts` parses every value field by field, drops invalid or
+duplicate records and replaces bad counts or settings with defaults, so a
+corrupted entry can never crash a render. The hook only writes back after it
+has read, which also heals the stored data.
+
+A game keeps its id when you rewind it. Finishing a rewound game therefore
+*replaces* its record (`stats.ts#recordMatch`) — the scoreboard moves the old
+result out and the new one in, so each game counts exactly once.
+
+## Tests
+
+`npm test` runs 95 tests in about 2.3 s:
+
+| File | What it pins down |
+|---|---|
+| `rules.test.ts` | line generation for every board, no wrap-around diagonals |
+| `engine.test.ts` | moves, draws, vanishing order, timeouts, rewind |
+| `search.test.ts` | the AI's rule mirror agrees with the engine (differential) |
+| `storage.test.ts` | corrupted / legacy localStorage payloads |
+| `stats.test.ts` | records and scoreboard, replayed games counted once |
+| `useGame.test.ts` | the hook end to end: storage healing, rewind, AI and blitz timers |
+| `__checks__/ai-strength.test.ts` | 690 seeded games: hard never loses on 3x3, hard vs hard always draws, Vanishing never draws, ≤ 250 ms per move on 5x5 |
+
+All random games are seeded, so a failure replays exactly.
 
 ## Deployment
 
-The app is published to GitHub Pages by hand — there is no CI for it. Pages is
-configured as *Deploy from a branch* on `main` / root, so a release means building
-the static export and copying it into the repository root of `main`.
+GitHub Pages is configured as *Deploy from a branch* on `main` / root, so a
+release is the static export copied into the repository root of `main`.
+
+The CI workflow (`.github/workflows/ci.yml`) runs lint, typecheck, tests and the
+build on every push and PR, then builds that exact export and uploads it as the
+`pages-export` artifact — the deployment can be reproduced from the PR's code
+without a local machine. Publishing is unzipping the artifact into the root of
+`main`. Locally the same build is:
 
 ```bash
 GITHUB_PAGES=true PAGES_BASE_PATH=/2026-quitcode-01-agentic-engineering-hw npm run build
+touch out/.nojekyll
 ```
 
 The Pages settings are opt-in through the environment, so plain `npm run build` and
