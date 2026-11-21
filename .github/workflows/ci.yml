@@ -1,0 +1,77 @@
+# Verifies the app on every push and pull request, and builds the exact static
+# export that is published to GitHub Pages, so a reviewer can reproduce the
+# deployment from the code of the PR itself.
+#
+# Pages is configured as "Deploy from a branch" (main / root), which
+# actions/deploy-pages cannot target. The workflow therefore does not deploy;
+# it uploads the export as the `pages-export` artifact, and publishing is
+# copying that artifact into the root of `main` (see app/README.md).
+name: CI
+
+on:
+  push:
+    branches:
+      - 'ws01/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  pages-export:
+    name: Build the GitHub Pages export
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci
+
+      # Pages serves the site from /<repo>/. GITHUB_REPOSITORY is owner/repo
+      # for every event, including pull requests from forks.
+      - name: Build static export
+        run: |
+          export PAGES_BASE_PATH="/${GITHUB_REPOSITORY#*/}"
+          GITHUB_PAGES=true npm run build
+          # Jekyll would skip _next/, leaving the page without CSS and JS.
+          touch out/.nojekyll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pages-export
+          path: app/out
+          include-hidden-files: true
+          if-no-files-found: error
