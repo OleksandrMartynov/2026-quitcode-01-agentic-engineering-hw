@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newGame } from './__checks__/fixtures';
 import { applyMove, applyTimeout, rewindTo } from './engine';
-import { EMPTY_STATS, recordMatch, toMatchRecord } from './stats';
+import { EMPTY_STATS, recordMatch, summarize, toMatchRecord } from './stats';
 import { HISTORY_LIMIT } from './storage';
 import type { GameState, MatchRecord } from './types';
 
@@ -20,6 +20,7 @@ const record = (id: string, result: MatchRecord['result']): MatchRecord => ({
   reason: result === 'draw' ? 'draw' : 'line',
   moveCount: 5,
   durationMs: 1000,
+  moves: null,
 });
 
 describe('toMatchRecord', () => {
@@ -33,6 +34,7 @@ describe('toMatchRecord', () => {
       moveCount: 5,
       durationMs: 4200,
       players: { X: 'Ann', O: 'Rival' },
+      moves: [0, 3, 1, 4, 2],
     });
   });
 
@@ -96,5 +98,57 @@ describe('recordMatch', () => {
     const snapshot = JSON.stringify(before);
     recordMatch(before, record('a', 'O'));
     expect(JSON.stringify(before)).toBe(snapshot);
+  });
+});
+
+describe('summarize', () => {
+  const vsAi = (id: string, result: MatchRecord['result'], difficulty: MatchRecord['difficulty']) => ({
+    ...record(id, result),
+    opponent: 'ai' as const,
+    difficulty,
+  });
+
+  it('is empty without games', () => {
+    expect(summarize([])).toEqual({
+      games: 0,
+      byMode: {},
+      vsComputer: {},
+      averageMoves: null,
+      bestStreak: 0,
+    });
+  });
+
+  it('tallies by mode and by level from the human point of view', () => {
+    // Newest first, as the history is stored.
+    const history = [
+      vsAi('e', 'O', 'hard'),
+      vsAi('d', 'X', 'easy'),
+      vsAi('c', 'X', 'easy'),
+      { ...record('b', 'draw'), mode: 'blitz' as const },
+      vsAi('a', 'draw', 'hard'),
+    ];
+    const summary = summarize(history);
+    expect(summary.games).toBe(5);
+    expect(summary.byMode).toEqual({
+      classic: { games: 4, X: 2, O: 1, draws: 1 },
+      blitz: { games: 1, X: 0, O: 0, draws: 1 },
+    });
+    expect(summary.vsComputer).toEqual({
+      easy: { games: 2, wins: 2, losses: 0, draws: 0 },
+      hard: { games: 2, wins: 0, losses: 1, draws: 1 },
+    });
+    expect(summary.averageMoves).toBe(5);
+  });
+
+  it('measures the streak in the order the games were played', () => {
+    // Played oldest -> newest: W W L W W W  => best streak 3.
+    const played = ['X', 'X', 'O', 'X', 'X', 'X'] as const;
+    const history = played.map((result, i) => vsAi(`g${i}`, result, 'medium')).reverse();
+    expect(summarize(history).bestStreak).toBe(3);
+  });
+
+  it('ignores two-player games for the streak', () => {
+    const history = [vsAi('c', 'X', 'easy'), record('b', 'O'), vsAi('a', 'X', 'easy')];
+    expect(summarize(history).bestStreak).toBe(2);
   });
 });

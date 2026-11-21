@@ -27,8 +27,9 @@ export const isPlayable = (state: GameState, index: number): boolean =>
   state.outcome.type === 'playing' && state.board[index] === null;
 
 /**
- * The single source of truth for a move — the UI and the AI search both go
- * through it, so no mode rule is ever implemented twice.
+ * The source of truth for a move: the UI, the medium AI, hints and replays all
+ * go through it. The hard AI uses a faster mirror of these rules in
+ * `search.ts`, which `search.test.ts` keeps in agreement with this function.
  */
 export const applyMove = (state: GameState, index: number): GameState => {
   if (!isPlayable(state, index)) return state;
@@ -86,10 +87,14 @@ export const rewindTo = (state: GameState, moveCount: number): GameState => {
   return replayed;
 };
 
-/** Marks that will vanish on their owner's next move, for the board hint. */
+/**
+ * Marks that will vanish on their owner's next move, for the board hint. A
+ * finished game has no next move, so nothing is doomed — otherwise a mark on
+ * the winning line would be drawn faded.
+ */
 export const doomedMarks = (state: GameState): number[] => {
   const { maxMarks } = MODES[state.settings.mode];
-  if (!Number.isFinite(maxMarks)) return [];
+  if (!Number.isFinite(maxMarks) || state.outcome.type !== 'playing') return [];
   return (['X', 'O'] as Player[])
     .filter((player) => state.queues[player].length === maxMarks)
     .map((player) => state.queues[player][0]);

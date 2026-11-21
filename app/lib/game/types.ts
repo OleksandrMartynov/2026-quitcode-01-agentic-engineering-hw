@@ -34,6 +34,7 @@ export type Settings = {
 
 export type Outcome =
   | { type: 'playing' }
+  /** `line`: every cell of every line the winning move completed. */
   | { type: 'win'; winner: Player; line: number[] }
   | { type: 'draw' }
   /** The player whose clock ran out loses; `winner` is the other one. */
@@ -76,6 +77,12 @@ export type MatchRecord = {
   reason: 'line' | 'draw' | 'timeout';
   moveCount: number;
   durationMs: number;
+  /**
+   * Cells played, in order — enough to rebuild every position for the replay.
+   * Null for records written before moves were stored, and for very long
+   * Vanishing games (see MAX_STORED_MOVES).
+   */
+  moves: number[] | null;
 };
 
 export type Scoreboard = { X: number; O: number; draws: number };

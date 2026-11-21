@@ -7,13 +7,15 @@ import {
   cleanName,
   normalizeSettings,
 } from './types';
+import { MAX_STORED_MOVES, movesMatchResult } from './replay';
 import type { MatchRecord, Player, Scoreboard, Settings } from './types';
 
-const KEYS = {
+export const STORAGE_KEYS = {
   settings: 'ttt-lab:settings',
   history: 'ttt-lab:history',
   scoreboard: 'ttt-lab:scoreboard',
 } as const;
+const KEYS = STORAGE_KEYS;
 
 export const EMPTY_SCOREBOARD: Scoreboard = { X: 0, O: 0, draws: 0 };
 
@@ -60,6 +62,34 @@ export const parseSettings = (raw: unknown): Settings => {
   });
 };
 
+/**
+ * Rules every finished game obeys, whether or not its moves were stored:
+ * X moves on odd turns, so a line win's parity names its winner; a timeout is
+ * lost by the player on turn and only exists in timed modes; a draw needs a
+ * full board, so Vanishing — whose board never fills — cannot have one.
+ */
+export const isPlausibleOutcome = (
+  record: Pick<MatchRecord, 'mode' | 'size' | 'winLength' | 'result' | 'reason' | 'moveCount'>
+): boolean => {
+  const config = MODES[record.mode];
+  const cells = record.size * record.size;
+  const boardCanFill = !Number.isFinite(config.maxMarks);
+  const lastMover: Player = record.moveCount % 2 === 1 ? 'X' : 'O';
+
+  if (record.moveCount < 1) return false;
+  if (boardCanFill && record.moveCount > cells) return false;
+
+  switch (record.reason) {
+    case 'line':
+      return record.moveCount >= 2 * record.winLength - 1 && record.result === lastMover;
+    case 'draw':
+      return boardCanFill && record.moveCount === cells;
+    case 'timeout':
+      // The player on turn ran out of time, so the last mover is the winner.
+      return config.timed && record.result === lastMover && record.moveCount < cells;
+  }
+};
+
 /** Returns null for anything that is not a complete, internally consistent record. */
 export const parseRecord = (raw: unknown): MatchRecord | null => {
   if (!isObject(raw)) return null;
@@ -88,7 +118,7 @@ export const parseRecord = (raw: unknown): MatchRecord | null => {
     O: cleanName(players.O, 'O'),
   };
 
-  return {
+  const record: MatchRecord = {
     id,
     playedAt,
     mode,
@@ -101,7 +131,23 @@ export const parseRecord = (raw: unknown): MatchRecord | null => {
     reason,
     moveCount: raw.moveCount,
     durationMs: raw.durationMs,
+    moves: null,
   };
+
+  if (!isPlausibleOutcome(record)) return null;
+
+  // Records written before moves were stored stay valid, just without a replay.
+  if (raw.moves === undefined || raw.moves === null) return record;
+
+  // A stored move list must be legal AND reproduce the stored result when it
+  // is played through the engine — the record is checked by simulation, not
+  // only by shape. A list that contradicts its own record means the entry was
+  // tampered with or corrupted, so the whole record is dropped.
+  const { moves } = raw;
+  if (!Array.isArray(moves) || moves.length > MAX_STORED_MOVES) return null;
+  if (!moves.every(isCount) || moves.length !== record.moveCount) return null;
+  if (!movesMatchResult(record, moves)) return null;
+  return { ...record, moves: [...moves] };
 };
 
 export const parseHistory = (raw: unknown): MatchRecord[] => {
@@ -143,7 +189,11 @@ const read = (key: string): unknown => {
 const write = (key: string, value: unknown): void => {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    // Skipping identical writes keeps open tabs from echoing each other's
+    // updates back and forth through the storage event.
+    if (window.localStorage.getItem(key) === serialized) return;
+    window.localStorage.setItem(key, serialized);
   } catch {
     // Storage full or blocked — the game stays playable, it just won't persist.
   }

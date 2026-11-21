@@ -1,24 +1,28 @@
 'use client';
 
 import { PHeading, PText } from '@porsche-design-system/components-react/ssr';
-import type { Scoreboard as ScoreboardData, Settings } from '@/lib/game/types';
+import type { Scoreboard as ScoreboardData } from '@/lib/game/types';
 
 type Props = {
   scoreboard: ScoreboardData;
-  settings: Settings;
 };
 
-export const Scoreboard = ({ scoreboard, settings }: Props) => {
+/*
+ * The score counts every game ever stored, by mark — across opponents and
+ * player names. Labelling it with today's names would credit "Bob" with games
+ * someone else won, so the labels name the marks instead.
+ */
+export const Scoreboard = ({ scoreboard }: Props) => {
   const entries = [
-    { key: 'X', label: settings.playerXName, value: scoreboard.X },
-    { key: 'O', label: settings.playerOName, value: scoreboard.O },
+    { key: 'X', label: 'X wins', value: scoreboard.X },
+    { key: 'O', label: 'O wins', value: scoreboard.O },
     { key: 'draws', label: 'Draws', value: scoreboard.draws },
   ];
 
   return (
     <section className="panel">
       <PHeading size="sm" tag="h2">
-        Score
+        All-time score
       </PHeading>
       <div className="scoreboard">
         {entries.map(({ key, label, value }) => (

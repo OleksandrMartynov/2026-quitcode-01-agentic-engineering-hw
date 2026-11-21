@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { chooseMove } from './game/ai';
+import { chooseMove, suggestMove } from './game/ai';
 import { applyMove, applyTimeout, createGame, rewindTo } from './game/engine';
 import { EMPTY_STATS, recordMatch, toMatchRecord } from './game/stats';
 import type { MatchStats } from './game/stats';
@@ -12,6 +12,7 @@ import {
   saveHistory,
   saveScoreboard,
   saveSettings,
+  STORAGE_KEYS,
 } from './game/storage';
 import { AI, DEFAULT_SETTINGS, MODES, finalizeSettings } from './game/types';
 import type { GameState, Settings } from './game/types';
@@ -30,6 +31,12 @@ export const useGame = () => {
   const [hydrated, setHydrated] = useState(false);
   /** The finished game object that was last written to the stats. */
   const recordedRef = useRef<GameState | null>(null);
+  /**
+   * A hint belongs to the exact position it was computed for. Keying it by the
+   * game object (every move, rewind or restart creates a new one) makes a
+   * stale hint impossible without any clean-up code.
+   */
+  const [hint, setHint] = useState<{ position: GameState; cell: number } | null>(null);
 
   // Stored state is read after mount so the server and the first client render
   // produce identical markup. This is the one place where a synchronous
@@ -58,6 +65,19 @@ export const useGame = () => {
     saveScoreboard(stats.scoreboard);
   }, [stats, hydrated]);
 
+  // Another tab finished a game or cleared the history: adopt its stats, so
+  // this tab's next write extends them instead of overwriting them.
+  useEffect(() => {
+    if (!hydrated) return;
+    const watched: string[] = [STORAGE_KEYS.history, STORAGE_KEYS.scoreboard];
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && !watched.includes(event.key)) return;
+      setStats({ history: loadHistory(), scoreboard: loadScoreboard() });
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [hydrated]);
+
   const startGame = useCallback((next: Settings) => {
     const finalized = finalizeSettings(next);
     setSettings(finalized);
@@ -68,8 +88,13 @@ export const useGame = () => {
 
   const play = useCallback((index: number) => setGame((current) => applyMove(current, index)), []);
 
+  // Time travel would reset the blitz clock and undo losses on time, so timed
+  // modes do not offer it.
   const rewind = useCallback(
-    (moveCount: number) => setGame((current) => rewindTo(current, moveCount)),
+    (moveCount: number) =>
+      setGame((current) =>
+        MODES[current.settings.mode].timed ? current : rewindTo(current, moveCount)
+      ),
     []
   );
 
@@ -77,6 +102,15 @@ export const useGame = () => {
 
   const aiTurn =
     game.settings.opponent === 'ai' && game.current === AI && game.outcome.type === 'playing';
+
+  const canHint = hydrated && game.outcome.type === 'playing' && !aiTurn;
+  const hintCell = hint !== null && hint.position === game ? hint.cell : null;
+
+  const requestHint = useCallback(() => {
+    if (!canHint) return;
+    const cell = suggestMove(game);
+    if (cell >= 0) setHint({ position: game, cell });
+  }, [canHint, game]);
 
   // Every timer below captures the position it was started for; the updater
   // re-checks it, so a callback that fires after the position changed (a move,
@@ -101,11 +135,17 @@ export const useGame = () => {
   }, [aiTurn, samePosition]);
 
   // Blitz clock: it runs only while a human is on turn, and restarts on every
-  // move. The remaining time is derived from the turn's timestamp rather than
-  // counted down in state, so a slow frame cannot lose a second.
+  // move. It starts with the first move, not with the game: a game is created
+  // on page load, and a clock started then would hand a loss to anyone who
+  // reloads the page or leaves it in a background tab. The remaining time is
+  // derived from the turn's timestamp rather than counted down in state, so a
+  // slow frame cannot lose a second.
   const { turnSeconds } = game.settings;
   const clockRunning =
-    MODES[game.settings.mode].timed && game.outcome.type === 'playing' && !aiTurn;
+    MODES[game.settings.mode].timed &&
+    game.outcome.type === 'playing' &&
+    game.moves.length > 0 &&
+    !aiTurn;
   const deadline = game.turnStartedAt + turnSeconds * 1000;
 
   const secondsLeft = clockRunning
@@ -128,7 +168,7 @@ export const useGame = () => {
   // same game again yields a new object with the same id, which `recordMatch`
   // turns into a replacement of the earlier record, not a second entry.
   useEffect(() => {
-    if (!hydrated || game.outcome.type === 'playing') return;
+    if (!hydrated || game.outcome.type === 'playing' || game.moves.length === 0) return;
     if (recordedRef.current === game) return;
     recordedRef.current = game;
 
@@ -143,6 +183,10 @@ export const useGame = () => {
     scoreboard: stats.scoreboard,
     secondsLeft,
     aiTurn,
+    rewindable: !MODES[game.settings.mode].timed,
+    hintCell,
+    canHint,
+    requestHint,
     startGame,
     restart,
     play,

@@ -2,6 +2,7 @@
 
 import {
   PButton,
+  PButtonPure,
   PHeading,
   PTable,
   PTableBody,
@@ -19,6 +20,7 @@ import type { MatchRecord } from '@/lib/game/types';
 type Props = {
   history: MatchRecord[];
   onClear: () => void;
+  onReplay: (id: string) => void;
 };
 
 const RESULT_VARIANT = {
@@ -45,7 +47,7 @@ const resultLabel = (record: MatchRecord): string => {
   return record.reason === 'timeout' ? `${name} (on time)` : name;
 };
 
-export const MatchHistory = ({ history, onClear }: Props) => {
+export const MatchHistory = ({ history, onClear, onReplay }: Props) => {
   return (
     <section className="panel">
       <div className="app__header">
@@ -78,6 +80,7 @@ export const MatchHistory = ({ history, onClear }: Props) => {
               <PTableHeadCell>Result</PTableHeadCell>
               <PTableHeadCell>Moves</PTableHeadCell>
               <PTableHeadCell>Length</PTableHeadCell>
+              <PTableHeadCell>Replay</PTableHeadCell>
             </PTableHeadRow>
           </PTableHead>
           <PTableBody>
@@ -95,6 +98,18 @@ export const MatchHistory = ({ history, onClear }: Props) => {
                 </PTableCell>
                 <PTableCell>{String(record.moveCount)}</PTableCell>
                 <PTableCell>{formatDuration(record.durationMs)}</PTableCell>
+                <PTableCell>
+                  <PButtonPure
+                    type="button"
+                    icon="replay"
+                    size="xs"
+                    hideLabel
+                    disabled={record.moves === null}
+                    onClick={() => onReplay(record.id)}
+                  >
+                    {`Replay the game played at ${formatTime(record.playedAt)}`}
+                  </PButtonPure>
+                </PTableCell>
               </PTableRow>
             ))}
           </PTableBody>

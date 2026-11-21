@@ -1,6 +1,7 @@
 'use client';
 
 import { PSpinner, PTag, PText } from '@porsche-design-system/components-react/ssr';
+import { cellName } from '@/lib/game/notation';
 import { MODES } from '@/lib/game/types';
 import type { GameState, Player } from '@/lib/game/types';
 
@@ -29,6 +30,24 @@ export const StatusBar = ({ game, secondsLeft, thinking }: Props) => {
     }
   })();
 
+  // What a screen reader hears after every change: the last move, then the
+  // state of the game. The visible tags are not a live region, because the
+  // ticking clock would otherwise be announced every second.
+  const lastMove = game.moves.at(-1);
+  const announcement = [
+    lastMove
+      ? `${nameOf(game, lastMove.player)} played ${cellName(lastMove.index, settings.size)}${
+          lastMove.removed === null ? '' : `, ${cellName(lastMove.removed, settings.size)} vanished`
+        }.`
+      : '',
+    `${headline}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const clockWaiting =
+    MODES[settings.mode].timed && outcome.type === 'playing' && game.moves.length === 0;
+
   const variant =
     outcome.type === 'playing' ? 'secondary' : outcome.type === 'draw' ? 'warning' : 'success';
 
@@ -40,6 +59,12 @@ export const StatusBar = ({ game, secondsLeft, thinking }: Props) => {
 
       <PTag variant="info">{MODES[settings.mode].label}</PTag>
       <PTag>{`${settings.size} x ${settings.size} · ${settings.winLength} in a row`}</PTag>
+
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {announcement}
+      </p>
+
+      {clockWaiting && <PTag icon="clock">Clock starts after the first move</PTag>}
 
       {secondsLeft !== null && (
         <PTag variant={secondsLeft <= 3 ? 'error' : 'primary'} icon="clock">

@@ -78,6 +78,14 @@ describe('vanishing rule', () => {
     expect(doomedMarks(game)).toEqual([0]);
     expect(doomedMarks(playAll(newGame('classic'), [0, 3, 1, 4, 8]))).toEqual([]);
   });
+
+  it('dooms nothing once the game is over, so the winning line is not faded', () => {
+    // X wins 2-5-8 on move 9 with three marks on the board (8 is the oldest).
+    const won = playAll(newGame('vanishing'), [0, 3, 1, 4, 8, 6, 5, 7, 2]);
+    expect(won.outcome).toMatchObject({ type: 'win', winner: 'X' });
+    expect(won.queues.X).toHaveLength(3);
+    expect(doomedMarks(won)).toEqual([]);
+  });
 });
 
 describe('applyTimeout', () => {

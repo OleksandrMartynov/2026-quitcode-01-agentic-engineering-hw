@@ -26,6 +26,8 @@ const validRecord = (patch: Partial<MatchRecord> = {}): MatchRecord => ({
   reason: 'line',
   moveCount: 7,
   durationMs: 12_000,
+  // X: 0, 1, 6, 2 / O: 3, 4, 8 — X completes the top row on move 7.
+  moves: [0, 3, 1, 4, 6, 8, 2],
   ...patch,
 });
 
@@ -54,6 +56,21 @@ describe('parseRecord', () => {
     expect(parseRecord({ ...validRecord(), ...patch })).toBeNull();
   });
 
+  // Records without moves can still be impossible games.
+  it.each([
+    ['a timeout in an untimed mode', { mode: 'classic', reason: 'timeout', result: 'X', moveCount: 1 }],
+    ['a draw in Vanishing', { mode: 'vanishing', reason: 'draw', result: 'draw', moveCount: 9 }],
+    ['a draw on a board that is not full', { reason: 'draw', result: 'draw', moveCount: 7 }],
+    ['a win with no moves', { moveCount: 0 }],
+    ['a win faster than a line can be built', { moveCount: 3 }],
+    ['more moves than cells', { moveCount: 9999 }],
+    ['a winner who did not make the last move', { result: 'O', moveCount: 7 }],
+    ['a timeout lost by the player who just moved', { mode: 'blitz', reason: 'timeout', result: 'O', moveCount: 1 }],
+    ['a timeout before any move', { mode: 'blitz', reason: 'timeout', result: 'O', moveCount: 0 }],
+  ])('rejects a record without moves showing %s', (_label, patch) => {
+    expect(parseRecord({ ...validRecord(), moves: null, ...patch })).toBeNull();
+  });
+
   it.each([null, 42, 'record', [], undefined])('rejects %o', (raw) => {
     expect(parseRecord(raw)).toBeNull();
   });
@@ -62,6 +79,48 @@ describe('parseRecord', () => {
     const legacy: Record<string, unknown> = { ...validRecord() };
     delete legacy.players;
     expect(parseRecord(legacy)?.players).toEqual({ X: 'X', O: 'O' });
+  });
+
+  it('keeps a legacy record without moves, just without a replay', () => {
+    const legacy: Record<string, unknown> = { ...validRecord() };
+    delete legacy.moves;
+    expect(parseRecord(legacy)?.moves).toBeNull();
+  });
+
+  // The move list is checked by replaying it through the engine.
+  it.each([
+    ['an occupied cell', { moves: [0, 0, 1, 4, 6, 8, 2] }],
+    ['an off-board cell', { moves: [0, 3, 1, 4, 6, 8, 9] }],
+    ['a move after the game ended', { moves: [0, 3, 1, 4, 2, 8, 5] }],
+    ['no winner at the end', { moves: [0, 1, 2, 4, 3, 5, 7] }],
+    ['the other player winning', { moves: [3, 0, 4, 1, 8, 2], moveCount: 6 }],
+    ['a count that differs from the list', { moves: [0, 3, 1, 4, 2] }],
+    ['non-integer cells', { moves: [0, 3, 1, 4, 6, 8, 2.5] }],
+  ])('rejects a record whose moves show %s', (_label, patch) => {
+    expect(parseRecord({ ...validRecord(), ...patch })).toBeNull();
+  });
+
+  it('accepts the same lists once they match the record', () => {
+    expect(parseRecord(validRecord({ moves: [3, 0, 4, 1, 8, 2], moveCount: 6, result: 'O' }))).not.toBeNull();
+    expect(parseRecord(validRecord({ moves: [0, 3, 1, 4, 2], moveCount: 5 }))).not.toBeNull();
+  });
+
+  it('rejects a move list that is not an array', () => {
+    expect(parseRecord({ ...validRecord(), moves: '0,3,1' })).toBeNull();
+  });
+
+  it('accepts a timeout only if the loser was the player on turn', () => {
+    const timeout = validRecord({ result: 'X', reason: 'timeout', mode: 'blitz', moveCount: 1, moves: [4] });
+    expect(parseRecord(timeout)).toEqual(timeout);
+    expect(parseRecord({ ...timeout, result: 'O' })).toBeNull();
+  });
+
+  it('accepts a real draw and a vanishing win', () => {
+    const draw = validRecord({ result: 'draw', reason: 'draw', moveCount: 9, moves: [0, 1, 2, 4, 3, 5, 7, 6, 8] });
+    expect(parseRecord(draw)).toEqual(draw);
+    // X's marks at 0 and 1 vanish on moves 7 and 9; X still completes 2-5-8.
+    const vanishing = validRecord({ mode: 'vanishing', moveCount: 9, moves: [0, 3, 1, 4, 8, 6, 5, 7, 2] });
+    expect(parseRecord(vanishing)).toEqual(vanishing);
   });
 
   it('drops a stray difficulty on a two-player game', () => {
@@ -76,7 +135,7 @@ describe('parseHistory', () => {
   });
 
   it('keeps only the newest copy of a duplicated id', () => {
-    const history = parseHistory([validRecord({ result: 'O' }), validRecord({ result: 'X' })]);
+    const history = parseHistory([validRecord({ result: 'O', moveCount: 6, moves: null }), validRecord()]);
     expect(history).toHaveLength(1);
     expect(history[0].result).toBe('O');
   });

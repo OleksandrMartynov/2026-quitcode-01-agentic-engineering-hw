@@ -164,8 +164,9 @@ const chooseMedium = (state: GameState): number => {
 };
 
 /**
- * Picks a move for the player currently on turn. Pure and synchronous: the
- * depth caps in MODES keep every difficulty well inside a single frame.
+ * Picks a move for the player currently on turn. Synchronous — the depth caps
+ * in MODES keep every difficulty well inside a single frame — and free of side
+ * effects, but not deterministic: ties are broken with Math.random.
  */
 export const chooseMove = (state: GameState): number => {
   const cells = emptyCells(state);
@@ -180,3 +181,11 @@ export const chooseMove = (state: GameState): number => {
       return chooseHard(state);
   }
 };
+
+/**
+ * The move the hard AI would play for whoever is on turn — the hint shown to a
+ * human player. Uses the same search as the opponent, so in Classic and Blitz
+ * the hint is always an optimal move.
+ */
+export const suggestMove = (state: GameState): number =>
+  chooseMove({ ...state, settings: { ...state.settings, difficulty: 'hard' } });

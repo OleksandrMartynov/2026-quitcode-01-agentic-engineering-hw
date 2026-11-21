@@ -1,5 +1,7 @@
+import { MAX_STORED_MOVES } from './replay';
 import { EMPTY_SCOREBOARD, HISTORY_LIMIT } from './storage';
-import type { GameState, MatchRecord, Scoreboard } from './types';
+import { HUMAN } from './types';
+import type { Difficulty, GameMode, GameState, MatchRecord, Scoreboard } from './types';
 
 /** History and scoreboard change together, so they live in one value. */
 export type MatchStats = { history: MatchRecord[]; scoreboard: Scoreboard };
@@ -26,6 +28,8 @@ export const toMatchRecord = (game: GameState, now: number = Date.now()): MatchR
     reason: outcome.type === 'win' ? 'line' : outcome.type,
     moveCount: game.moves.length,
     durationMs: Math.max(0, now - game.startedAt),
+    moves:
+      game.moves.length <= MAX_STORED_MOVES ? game.moves.map((move) => move.index) : null,
   };
 };
 
@@ -51,5 +55,63 @@ export const recordMatch = (stats: MatchStats, record: MatchRecord): MatchStats 
       HISTORY_LIMIT
     ),
     scoreboard: adjust(withoutPrevious, record.result, 1),
+  };
+};
+
+export type Tally = { games: number; X: number; O: number; draws: number };
+export type DifficultyTally = { games: number; wins: number; losses: number; draws: number };
+
+export type Summary = {
+  games: number;
+  byMode: Partial<Record<GameMode, Tally>>;
+  /** Games against the computer, from the human's (X's) point of view. */
+  vsComputer: Partial<Record<Difficulty, DifficultyTally>>;
+  /** Mean number of moves of the finished games, or null without games. */
+  averageMoves: number | null;
+  /** The longest run of consecutive human wins against the computer. */
+  bestStreak: number;
+};
+
+/**
+ * Aggregates the stored history (newest first) into per-mode and per-level
+ * results. Derived on demand rather than stored, so it can never disagree with
+ * the records it is built from.
+ */
+export const summarize = (history: readonly MatchRecord[]): Summary => {
+  const byMode: Summary['byMode'] = {};
+  const vsComputer: Summary['vsComputer'] = {};
+  let totalMoves = 0;
+  let streak = 0;
+  let bestStreak = 0;
+
+  // Oldest first, so the streak follows the order the games were played in.
+  for (const record of [...history].reverse()) {
+    totalMoves += record.moveCount;
+
+    const tally = byMode[record.mode] ?? { games: 0, X: 0, O: 0, draws: 0 };
+    tally.games += 1;
+    if (record.result === 'draw') tally.draws += 1;
+    else tally[record.result] += 1;
+    byMode[record.mode] = tally;
+
+    if (record.opponent === 'ai' && record.difficulty !== null) {
+      const level = vsComputer[record.difficulty] ?? { games: 0, wins: 0, losses: 0, draws: 0 };
+      level.games += 1;
+      if (record.result === 'draw') level.draws += 1;
+      else if (record.result === HUMAN) level.wins += 1;
+      else level.losses += 1;
+      vsComputer[record.difficulty] = level;
+
+      streak = record.result === HUMAN ? streak + 1 : 0;
+      bestStreak = Math.max(bestStreak, streak);
+    }
+  }
+
+  return {
+    games: history.length,
+    byMode,
+    vsComputer,
+    averageMoves: history.length === 0 ? null : totalMoves / history.length,
+    bestStreak,
   };
 };

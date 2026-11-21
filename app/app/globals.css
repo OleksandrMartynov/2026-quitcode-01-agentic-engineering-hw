@@ -121,6 +121,44 @@ body {
   opacity: 0.3;
 }
 
+/* The suggested move: a dot in the owner's colour, gently pulsing. */
+.board__mark[data-hint='true'] {
+  color: var(--p-color-info);
+  animation: hint-pulse 1.2s var(--p-ease-in-out) infinite alternate;
+}
+
+@keyframes hint-pulse {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board__mark[data-hint='true'] {
+    animation: none;
+  }
+}
+
+/* Display-only cells of the replay board; panels are `surface`, so cells use
+   `canvas` to stand out from them. */
+.board__cell--static {
+  place-items: center;
+  background: var(--p-color-canvas);
+  border-radius: var(--p-radius-md);
+}
+
+.board__cell--static[data-won='true'] {
+  background: var(--p-color-primary);
+  color: var(--p-color-canvas);
+}
+
+.replay__board {
+  width: min(100%, 280px);
+}
+
 /* ── Panels ──────────────────────────────────────────────────────────── */
 
 .scoreboard {
@@ -142,4 +180,17 @@ body {
   padding: 0;
   max-height: 260px;
   overflow-y: auto;
+}
+
+/* Read by screen readers, invisible on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }

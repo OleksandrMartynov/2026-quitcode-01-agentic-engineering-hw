@@ -52,6 +52,17 @@ describe('findWinner', () => {
     expect(findWinner(board, lines)).toEqual({ winner: 'X', line: [0, 4, 8] });
   });
 
+  it('highlights every line a single move completes', () => {
+    // One move at 0 completes the top row 0-1-2 and the diagonal 0-4-8.
+    const board: Board = ['X', 'X', 'X', 'O', 'X', 'O', 'O', 'O', 'X'];
+    expect(findWinner(board, lines)).toEqual({ winner: 'X', line: [0, 1, 2, 4, 8] });
+
+    // 5x5, four in a row: X on 0-4 completes [0..3] and [1..4].
+    const wide: Board = Array(25).fill(null);
+    for (const cell of [0, 1, 2, 3, 4]) wide[cell] = 'X';
+    expect(findWinner(wide, buildLines(5, 4))?.line).toEqual([0, 1, 2, 3, 4]);
+  });
+
   it('returns null without a complete line', () => {
     const board: Board = ['X', 'O', 'X', 'X', 'O', 'O', 'O', 'X', 'X'];
     expect(findWinner(board, lines)).toBeNull();
