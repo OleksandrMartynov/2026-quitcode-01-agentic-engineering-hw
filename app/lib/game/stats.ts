@@ -44,10 +44,21 @@ const adjust = (scoreboard: Scoreboard, result: MatchRecord['result'], delta: 1 
  * result leaves the scoreboard and the new one enters it. Every game is
  * therefore counted exactly once, however often it is replayed, and calling
  * this twice with the same record is a no-op for the scoreboard.
+ *
+ * `alreadyCounted` is the result this game last added to the scoreboard, as
+ * remembered by the caller. It matters when the old record is no longer in
+ * the history — evicted by HISTORY_LIMIT after games finished in another tab —
+ * but its result is still part of the score.
  */
-export const recordMatch = (stats: MatchStats, record: MatchRecord): MatchStats => {
-  const previous = stats.history.find((entry) => entry.id === record.id);
-  const withoutPrevious = previous ? adjust(stats.scoreboard, previous.result, -1) : stats.scoreboard;
+export const recordMatch = (
+  stats: MatchStats,
+  record: MatchRecord,
+  alreadyCounted: MatchRecord['result'] | null = null
+): MatchStats => {
+  const previous =
+    stats.history.find((entry) => entry.id === record.id)?.result ?? alreadyCounted;
+  const withoutPrevious =
+    previous === null ? stats.scoreboard : adjust(stats.scoreboard, previous, -1);
 
   return {
     history: [record, ...stats.history.filter((entry) => entry.id !== record.id)].slice(

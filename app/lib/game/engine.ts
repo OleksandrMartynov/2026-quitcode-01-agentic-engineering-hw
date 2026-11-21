@@ -1,5 +1,5 @@
 import { buildLines, findWinner, isBoardFull, otherPlayer } from './rules';
-import { MODES, normalizeSettings } from './types';
+import { AI, MODES, normalizeSettings } from './types';
 import type { GameState, Move, Player, Settings } from './types';
 
 const makeId = (): string =>
@@ -70,6 +70,20 @@ export const applyMove = (state: GameState, index: number): GameState => {
     current: outcome.type === 'playing' ? otherPlayer(player) : player,
     turnStartedAt: Date.now(),
   };
+};
+
+/**
+ * True when the player on the blitz clock has used up their time. The clock
+ * runs from the first move on, and never on the computer's turn. Moves and
+ * clock ticks both ask this, so a click that lands after the deadline — but
+ * before the next tick, e.g. in a throttled background tab — loses on time
+ * instead of being played.
+ */
+export const isOutOfTime = (state: GameState, now: number): boolean => {
+  if (!MODES[state.settings.mode].timed || state.outcome.type !== 'playing') return false;
+  if (state.moves.length === 0) return false;
+  if (state.settings.opponent === 'ai' && state.current === AI) return false;
+  return now >= state.turnStartedAt + state.settings.turnSeconds * 1000;
 };
 
 /** The player on the clock ran out of time and loses the game. */

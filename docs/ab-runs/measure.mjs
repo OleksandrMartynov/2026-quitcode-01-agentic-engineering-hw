@@ -28,7 +28,13 @@ const typeCheck = (appPath, batch) => {
   try {
     execSync('npx tsc --noEmit', { cwd: appPath, stdio: 'pipe' });
   } catch (error) {
-    output = String(error.stdout);
+    output = String(error.stdout ?? '');
+    // tsc exits non-zero both for type errors and for failing to run at all.
+    // Only the first produces diagnostics; anything else is a broken check,
+    // which must not be reported as "0 errors".
+    if (!/error TS\d+/.test(output)) {
+      throw new Error(`tsc did not run in ${appPath}: ${String(error.stderr ?? error.message)}`);
+    }
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
@@ -79,7 +85,10 @@ const summary = Object.fromEntries(
       bareControls: mean(group.map((row) => row.bareControls)).toFixed(1),
       styleProps: mean(group.map((row) => row.styleProps)).toFixed(1),
       classNames: mean(group.map((row) => row.classNames)).toFixed(1),
-      tscErrorsTotal: group.reduce((sum, row) => sum + (Number(row.tscErrors) || 0), 0),
+      // A group with an unchecked file has no total: 'n/a' is not 0 errors.
+      tscErrorsTotal: group.some((row) => typeof row.tscErrors !== 'number')
+        ? 'n/a'
+        : group.reduce((sum, row) => sum + row.tscErrors, 0),
       selfTsc: `${group.filter((row) => row.selfTsc).length}/${group.length}`,
       tokens: mean(group.map((row) => row.tokens)).toFixed(0),
       toolUses: mean(group.map((row) => row.toolUses)).toFixed(1),

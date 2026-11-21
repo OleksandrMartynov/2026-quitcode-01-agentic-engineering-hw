@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newGame } from './__checks__/fixtures';
-import { applyMove, applyTimeout, createGame, doomedMarks, rewindTo } from './engine';
+import { applyMove, applyTimeout, createGame, doomedMarks, isOutOfTime, rewindTo } from './engine';
 import type { GameState } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
@@ -97,6 +97,25 @@ describe('applyTimeout', () => {
   it('does nothing to a finished game', () => {
     const won = playAll(newGame('blitz'), [0, 3, 1, 4, 2]);
     expect(applyTimeout(won)).toBe(won);
+  });
+});
+
+describe('isOutOfTime', () => {
+  const blitz = (patch = {}) =>
+    applyMove(newGame('blitz', { opponent: 'human', turnSeconds: 5, ...patch }), 4);
+
+  it('is false until the deadline and true from it on', () => {
+    const game = blitz();
+    expect(isOutOfTime(game, game.turnStartedAt + 4_999)).toBe(false);
+    expect(isOutOfTime(game, game.turnStartedAt + 5_000)).toBe(true);
+  });
+
+  it('never applies to untimed modes, the first move, the computer or a finished game', () => {
+    const later = Date.now() + 60_000;
+    expect(isOutOfTime(applyMove(newGame('classic'), 4), later)).toBe(false);
+    expect(isOutOfTime(newGame('blitz'), later)).toBe(false);
+    expect(isOutOfTime(blitz({ opponent: 'ai' }), later)).toBe(false);
+    expect(isOutOfTime(applyTimeout(blitz()), later)).toBe(false);
   });
 });
 

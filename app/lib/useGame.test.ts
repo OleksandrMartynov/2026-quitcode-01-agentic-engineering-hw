@@ -226,7 +226,57 @@ describe('blitz', () => {
   });
 });
 
+describe('blitz deadline at the moment of the click', () => {
+  it('loses on time instead of accepting a late move the ticker has not caught yet', () => {
+    const { result } = mount();
+    act(() => result.current.startGame({ ...twoPlayers, mode: 'blitz', turnSeconds: 5 }));
+    for (const cell of [0, 3, 1, 4]) act(() => result.current.play(cell));
+
+    // The clock ran out, but no interval tick has run since (e.g. a throttled
+    // background tab): only the system time moves.
+    vi.setSystemTime(Date.now() + 6_000);
+    act(() => result.current.play(2));
+
+    expect(result.current.game.outcome).toEqual({ type: 'timeout', winner: 'O' });
+    expect(result.current.game.moves).toHaveLength(4);
+  });
+
+  it('still accepts the very first move whenever it comes', () => {
+    const { result } = mount();
+    act(() => result.current.startGame({ ...twoPlayers, mode: 'blitz', turnSeconds: 5 }));
+    vi.setSystemTime(Date.now() + 60_000);
+    act(() => result.current.play(4));
+    expect(result.current.game.moves).toHaveLength(1);
+    expect(result.current.game.outcome.type).toBe('playing');
+  });
+});
+
 describe('two open tabs', () => {
+  it('moves a replayed result out of the score even after its record was evicted', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+
+    // Another tab finishes 25 games: this game's record falls out of the history.
+    const others = Array.from({ length: 25 }, (_, i) => ({
+      ...result.current.history[0],
+      id: `other-${i}`,
+      moves: null,
+    }));
+    window.localStorage.setItem('ttt-lab:history', JSON.stringify(others));
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 26, O: 0, draws: 0 }));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history' }));
+    });
+    expect(result.current.history.some((record) => record.id === result.current.game.id)).toBe(false);
+
+    // Rewind this game and let O win instead: X's old win must leave the score.
+    act(() => result.current.rewind(4));
+    for (const cell of [8, 5]) act(() => result.current.play(cell));
+    expect(result.current.scoreboard).toEqual({ X: 25, O: 1, draws: 0 });
+  });
+
   it('extend the shared history instead of overwriting it', () => {
     const tabA = mount();
     const tabB = mount();

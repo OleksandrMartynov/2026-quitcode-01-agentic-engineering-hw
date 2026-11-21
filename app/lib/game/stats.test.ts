@@ -54,7 +54,7 @@ describe('toMatchRecord', () => {
 describe('recordMatch', () => {
   it('adds new matches to the top and counts them', () => {
     const stats = [record('a', 'X'), record('b', 'draw'), record('c', 'O')].reduce(
-      recordMatch,
+      (stats, entry) => recordMatch(stats, entry),
       EMPTY_STATS
     );
     expect(stats.history.map((entry) => entry.id)).toEqual(['c', 'b', 'a']);
@@ -72,6 +72,14 @@ describe('recordMatch', () => {
     expect(replayed.history).toHaveLength(1);
     expect(replayed.history[0].result).toBe('X');
     expect(replayed.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+  });
+
+  it('takes a remembered result out of the score when the record was evicted', () => {
+    // The game's record fell out of the history, but its X win is still counted.
+    const stats = { history: [], scoreboard: { X: 5, O: 0, draws: 0 } };
+    expect(recordMatch(stats, record('a', 'O'), 'X').scoreboard).toEqual({ X: 4, O: 1, draws: 0 });
+    // Without a remembered result the game is simply added.
+    expect(recordMatch(stats, record('a', 'O')).scoreboard).toEqual({ X: 5, O: 1, draws: 0 });
   });
 
   it('cannot be farmed by rewinding the same finished game over and over', () => {

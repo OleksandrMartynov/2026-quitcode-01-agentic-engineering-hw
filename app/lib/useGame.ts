@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { chooseMove, suggestMove } from './game/ai';
-import { applyMove, applyTimeout, createGame, rewindTo } from './game/engine';
+import { applyMove, applyTimeout, createGame, isOutOfTime, rewindTo } from './game/engine';
 import { EMPTY_STATS, recordMatch, toMatchRecord } from './game/stats';
 import type { MatchStats } from './game/stats';
 import {
@@ -15,7 +15,7 @@ import {
   STORAGE_KEYS,
 } from './game/storage';
 import { AI, DEFAULT_SETTINGS, MODES, finalizeSettings } from './game/types';
-import type { GameState, Settings } from './game/types';
+import type { GameState, MatchRecord, Settings } from './game/types';
 
 /** Long enough for the AI move to read as a reply rather than a glitch. */
 export const AI_THINKING_MS = 400;
@@ -31,6 +31,12 @@ export const useGame = () => {
   const [hydrated, setHydrated] = useState(false);
   /** The finished game object that was last written to the stats. */
   const recordedRef = useRef<GameState | null>(null);
+  /**
+   * The result the current game last added to the score. Kept apart from the
+   * history, which can lose the record (HISTORY_LIMIT, other tabs) while the
+   * score still contains it.
+   */
+  const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
   /**
    * A hint belongs to the exact position it was computed for. Keying it by the
    * game object (every move, rewind or restart creates a new one) makes a
@@ -86,7 +92,14 @@ export const useGame = () => {
 
   const restart = useCallback(() => setGame((current) => createGame(current.settings)), []);
 
-  const play = useCallback((index: number) => setGame((current) => applyMove(current, index)), []);
+  // The deadline is checked at the moment of the move, not only by the ticker.
+  const play = useCallback(
+    (index: number) =>
+      setGame((current) =>
+        isOutOfTime(current, Date.now()) ? applyTimeout(current) : applyMove(current, index)
+      ),
+    []
+  );
 
   // Time travel would reset the blitz clock and undo losses on time, so timed
   // modes do not offer it.
@@ -98,7 +111,11 @@ export const useGame = () => {
     []
   );
 
-  const clearHistory = useCallback(() => setStats(EMPTY_STATS), []);
+  const clearHistory = useCallback(() => {
+    // A cleared score holds nothing that a replayed game could take back.
+    countedRef.current = null;
+    setStats(EMPTY_STATS);
+  }, []);
 
   const aiTurn =
     game.settings.opponent === 'ai' && game.current === AI && game.outcome.type === 'playing';
@@ -157,9 +174,9 @@ export const useGame = () => {
     const ticker = window.setInterval(() => {
       const moment = Date.now();
       setNow(moment);
-      if (moment >= deadline) {
-        setGame((current) => (samePosition(current) ? applyTimeout(current) : current));
-      }
+      setGame((current) =>
+        samePosition(current) && isOutOfTime(current, moment) ? applyTimeout(current) : current
+      );
     }, CLOCK_TICK_MS);
     return () => window.clearInterval(ticker);
   }, [clockRunning, deadline, samePosition]);
@@ -173,7 +190,9 @@ export const useGame = () => {
     recordedRef.current = game;
 
     const record = toMatchRecord(game);
-    setStats((previous) => recordMatch(previous, record));
+    const counted = countedRef.current?.id === game.id ? countedRef.current.result : null;
+    countedRef.current = { id: game.id, result: record.result };
+    setStats((previous) => recordMatch(previous, record, counted));
   }, [game, hydrated]);
 
   return {
