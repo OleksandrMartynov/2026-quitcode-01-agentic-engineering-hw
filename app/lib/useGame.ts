@@ -11,7 +11,7 @@ import {
   loadSettings,
   saveHistory,
   saveScoreboard,
-  isEmptyHistoryValue,
+  isClearedHistoryValue,
   saveSettings,
   STORAGE_KEYS,
 } from './game/storage';
@@ -82,7 +82,7 @@ export const useGame = () => {
       // A clear in another tab (an emptied history, or localStorage.clear()
       // with key === null) also took this game's result out of the score, so
       // there is nothing left for a replay of it to subtract.
-      if (event.key === null || (event.key === STORAGE_KEYS.history && isEmptyHistoryValue(event.newValue))) {
+      if (event.key === null || (event.key === STORAGE_KEYS.history && isClearedHistoryValue(event.newValue))) {
         countedRef.current = null;
       }
       setStats({ history: loadHistory(), scoreboard: loadScoreboard() });

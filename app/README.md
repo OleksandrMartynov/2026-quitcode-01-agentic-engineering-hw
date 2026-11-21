@@ -118,7 +118,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 165 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 167 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below 95 % of lines.
 
 | File | What it pins down |

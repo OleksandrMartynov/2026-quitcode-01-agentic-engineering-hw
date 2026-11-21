@@ -333,6 +333,26 @@ describe('two open tabs', () => {
     expect(result.current.scoreboard).toEqual({ X: 1, O: 1, draws: 0 });
   });
 
+  it('keeps the counted result when another tab writes corrupted history', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+
+    // Garbage in the history, but the score (with this game's X win) untouched.
+    const newValue = '{not json';
+    window.localStorage.setItem('ttt-lab:history', newValue);
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
+    });
+    expect(result.current.history).toEqual([]);
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+
+    // Replaying the game must still move the old X win out of the score.
+    act(() => result.current.rewind(4));
+    for (const cell of [8, 5]) act(() => result.current.play(cell));
+    expect(result.current.scoreboard).toEqual({ X: 0, O: 1, draws: 0 });
+  });
+
   it('ignores changes to unrelated keys', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));

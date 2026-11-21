@@ -200,16 +200,19 @@ const write = (key: string, value: unknown): void => {
 };
 
 /**
- * True when a stored history value (e.g. a storage event's `newValue`) holds
- * no records: the history was cleared. Eviction by HISTORY_LIMIT never empties
- * it, so an empty history means the score was reset too.
+ * True when a stored history value (a storage event's `newValue`) is the trace
+ * of a clear: the key was removed (`null`) or set to an empty array, which is
+ * exactly what clearing the history writes. Eviction by HISTORY_LIMIT never
+ * empties the history. Corrupted data — unparseable JSON, or records that fail
+ * validation — is NOT a clear: the score may still hold this game's result.
  */
-export const isEmptyHistoryValue = (raw: string | null): boolean => {
+export const isClearedHistoryValue = (raw: string | null): boolean => {
   if (raw === null) return true;
   try {
-    return parseHistory(JSON.parse(raw) as unknown).length === 0;
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value) && value.length === 0;
   } catch {
-    return true;
+    return false;
   }
 };
 

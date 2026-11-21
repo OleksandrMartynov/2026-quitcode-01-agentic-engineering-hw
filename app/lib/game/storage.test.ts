@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   HISTORY_LIMIT,
-  isEmptyHistoryValue,
+  isClearedHistoryValue,
   loadHistory,
   loadScoreboard,
   loadSettings,
@@ -202,15 +202,16 @@ describe('parseSettings', () => {
   });
 });
 
-describe('isEmptyHistoryValue', () => {
+describe('isClearedHistoryValue', () => {
   it.each([
-    [null, true],
-    ['[]', true],
-    ['not json', true],
-    ['[{"id":"broken"}]', true],
-    [JSON.stringify([validRecord()]), false],
-  ])('%s → %s', (raw, expected) => {
-    expect(isEmptyHistoryValue(raw)).toBe(expected);
+    ['a removed key', null, true],
+    ['an empty array', '[]', true],
+    ['unparseable JSON', 'not json', false],
+    ['only invalid records', '[{"id":"broken"}]', false],
+    ['a non-array value', '{}', false],
+    ['a valid history', JSON.stringify([validRecord()]), false],
+  ])('%s → %s', (_label, raw, expected) => {
+    expect(isClearedHistoryValue(raw)).toBe(expected);
   });
 });
 
