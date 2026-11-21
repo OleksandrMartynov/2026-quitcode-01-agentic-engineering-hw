@@ -108,7 +108,8 @@ skipped so the tabs do not echo each other. *Clear history* also bumps a
 dedicated `ttt-lab:cleared-at` key — an explicit clear signal — and only that
 signal makes the other tabs forget what their current game added to the score.
 A clear is never inferred from the history's content: corrupted data repaired
-to `[]` looks exactly like a cleared history. Known limit: if two tabs finish a
+to `[]` looks exactly like a cleared history. The cleared stats are written
+before the signal, so a tab reacting to it can only read the cleared state. Known limit: if two tabs finish a
 game within the few milliseconds it takes the event to arrive, the later write
 wins and one game is lost from the shared history. Closing that window needs a
 cross-tab lock around read–modify–write (e.g. the Web Locks API), which is more

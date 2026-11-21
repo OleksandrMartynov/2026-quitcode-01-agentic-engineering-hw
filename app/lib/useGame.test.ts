@@ -373,10 +373,31 @@ describe('two open tabs', () => {
     expect(result.current.scoreboard).toEqual({ X: 0, O: 1, draws: 0 });
   });
 
-  it('announces its own clear to the other tabs', () => {
+  it('announces its own clear only after the cleared stats are stored', () => {
     const { result } = mount();
-    act(() => result.current.clearHistory());
-    expect(window.localStorage.getItem('ttt-lab:cleared-at')).not.toBeNull();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+
+    // What another tab would read at the moment the signal lands.
+    let seenBySignal: unknown = null;
+    const setItem = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      setItem.call(this, key, value);
+      if (key === 'ttt-lab:cleared-at') {
+        seenBySignal = { history: stored('history'), scoreboard: stored('scoreboard') };
+      }
+    });
+    try {
+      act(() => result.current.clearHistory());
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(seenBySignal).toEqual({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
   });
 
   it('ignores changes to unrelated keys', () => {

@@ -123,8 +123,14 @@ export const useGame = () => {
     // A cleared score holds nothing that a replayed game could take back —
     // here, and in every other open tab.
     countedRef.current = null;
-    setStats(EMPTY_STATS);
+    // Order matters across tabs: the empty stats are stored synchronously
+    // BEFORE the signal, so a tab reacting to it already reads the cleared
+    // state and cannot write the old one back. (The persistence effect then
+    // finds identical values and skips its write.)
+    saveHistory(EMPTY_STATS.history);
+    saveScoreboard(EMPTY_STATS.scoreboard);
     announceClear();
+    setStats(EMPTY_STATS);
   }, []);
 
   const aiTurn =
