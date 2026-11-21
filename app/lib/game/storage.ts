@@ -14,6 +14,8 @@ export const STORAGE_KEYS = {
   settings: 'ttt-lab:settings',
   history: 'ttt-lab:history',
   scoreboard: 'ttt-lab:scoreboard',
+  /** Bumped on every "Clear history": the explicit cross-tab clear signal. */
+  clearedAt: 'ttt-lab:cleared-at',
 } as const;
 const KEYS = STORAGE_KEYS;
 
@@ -200,21 +202,13 @@ const write = (key: string, value: unknown): void => {
 };
 
 /**
- * True when a stored history value (a storage event's `newValue`) is the trace
- * of a clear: the key was removed (`null`) or set to an empty array, which is
- * exactly what clearing the history writes. Eviction by HISTORY_LIMIT never
- * empties the history. Corrupted data — unparseable JSON, or records that fail
- * validation — is NOT a clear: the score may still hold this game's result.
+ * Announces a clear to the other tabs. A clear cannot be inferred from the
+ * history's content — corrupted data repaired to `[]` by another tab looks
+ * exactly like a cleared history — so it gets a key of its own. The value is
+ * unique per clear, so two clears in a row still fire two storage events.
  */
-export const isClearedHistoryValue = (raw: string | null): boolean => {
-  if (raw === null) return true;
-  try {
-    const value = JSON.parse(raw) as unknown;
-    return Array.isArray(value) && value.length === 0;
-  } catch {
-    return false;
-  }
-};
+export const announceClear = (): void =>
+  write(KEYS.clearedAt, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
 export const loadSettings = (): Settings => parseSettings(read(KEYS.settings));
 

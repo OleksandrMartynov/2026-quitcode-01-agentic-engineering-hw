@@ -11,7 +11,7 @@ import {
   loadSettings,
   saveHistory,
   saveScoreboard,
-  isClearedHistoryValue,
+  announceClear,
   saveSettings,
   STORAGE_KEYS,
 } from './game/storage';
@@ -76,13 +76,14 @@ export const useGame = () => {
   // this tab's next write extends them instead of overwriting them.
   useEffect(() => {
     if (!hydrated) return;
-    const watched: string[] = [STORAGE_KEYS.history, STORAGE_KEYS.scoreboard];
+    const watched: string[] = [STORAGE_KEYS.history, STORAGE_KEYS.scoreboard, STORAGE_KEYS.clearedAt];
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && !watched.includes(event.key)) return;
-      // A clear in another tab (an emptied history, or localStorage.clear()
-      // with key === null) also took this game's result out of the score, so
-      // there is nothing left for a replay of it to subtract.
-      if (event.key === null || (event.key === STORAGE_KEYS.history && isClearedHistoryValue(event.newValue))) {
+      // Only an explicit clear (its own key, or localStorage.clear() with
+      // key === null) takes this game's result out of the score. Whatever the
+      // history holds — even [] written back after repairing corrupted data —
+      // never does, so the remembered result is reset on the signal alone.
+      if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
         countedRef.current = null;
       }
       setStats({ history: loadHistory(), scoreboard: loadScoreboard() });
@@ -119,9 +120,11 @@ export const useGame = () => {
   );
 
   const clearHistory = useCallback(() => {
-    // A cleared score holds nothing that a replayed game could take back.
+    // A cleared score holds nothing that a replayed game could take back —
+    // here, and in every other open tab.
     countedRef.current = null;
     setStats(EMPTY_STATS);
+    announceClear();
   }, []);
 
   const aiTurn =

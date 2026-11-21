@@ -321,6 +321,7 @@ describe('two open tabs', () => {
     };
     send('ttt-lab:history', []);
     send('ttt-lab:scoreboard', { X: 0, O: 0, draws: 0 });
+    send('ttt-lab:cleared-at', 'clear-1');
     // ...and then records an X win of its own.
     send('ttt-lab:history', [{ ...won, id: 'other-tab-game' }]);
     send('ttt-lab:scoreboard', { X: 1, O: 0, draws: 0 });
@@ -351,6 +352,31 @@ describe('two open tabs', () => {
     act(() => result.current.rewind(4));
     for (const cell of [8, 5]) act(() => result.current.play(cell));
     expect(result.current.scoreboard).toEqual({ X: 0, O: 1, draws: 0 });
+  });
+
+  it('keeps the counted result when a third tab repairs corrupted history to []', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+
+    // Tab C wrote garbage; tab B parsed it and wrote [] back. The score — with
+    // this game's X win — was never cleared, and no clear was announced.
+    const newValue = '[]';
+    window.localStorage.setItem('ttt-lab:history', newValue);
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
+    });
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
+
+    act(() => result.current.rewind(4));
+    for (const cell of [8, 5]) act(() => result.current.play(cell));
+    expect(result.current.scoreboard).toEqual({ X: 0, O: 1, draws: 0 });
+  });
+
+  it('announces its own clear to the other tabs', () => {
+    const { result } = mount();
+    act(() => result.current.clearHistory());
+    expect(window.localStorage.getItem('ttt-lab:cleared-at')).not.toBeNull();
   });
 
   it('ignores changes to unrelated keys', () => {

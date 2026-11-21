@@ -104,9 +104,11 @@ of time). A record that contradicts its own moves is dropped.
 
 Two open tabs share one history: each tab listens for the `storage` event and
 adopts the other's changes before writing its own, and identical writes are
-skipped so the tabs do not echo each other. A clear in another tab also makes
-this tab forget what its current game added to the score, so replaying that
-game never subtracts a result the clear already removed. Known limit: if two tabs finish a
+skipped so the tabs do not echo each other. *Clear history* also bumps a
+dedicated `ttt-lab:cleared-at` key — an explicit clear signal — and only that
+signal makes the other tabs forget what their current game added to the score.
+A clear is never inferred from the history's content: corrupted data repaired
+to `[]` looks exactly like a cleared history. Known limit: if two tabs finish a
 game within the few milliseconds it takes the event to arrive, the later write
 wins and one game is lost from the shared history. Closing that window needs a
 cross-tab lock around read–modify–write (e.g. the Web Locks API), which is more
@@ -118,7 +120,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 167 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 164 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below 95 % of lines.
 
 | File | What it pins down |

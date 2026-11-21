@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   HISTORY_LIMIT,
-  isClearedHistoryValue,
+  announceClear,
   loadHistory,
   loadScoreboard,
   loadSettings,
@@ -202,16 +202,14 @@ describe('parseSettings', () => {
   });
 });
 
-describe('isClearedHistoryValue', () => {
-  it.each([
-    ['a removed key', null, true],
-    ['an empty array', '[]', true],
-    ['unparseable JSON', 'not json', false],
-    ['only invalid records', '[{"id":"broken"}]', false],
-    ['a non-array value', '{}', false],
-    ['a valid history', JSON.stringify([validRecord()]), false],
-  ])('%s → %s', (_label, raw, expected) => {
-    expect(isClearedHistoryValue(raw)).toBe(expected);
+describe('announceClear', () => {
+  it('writes a new value on every clear, so each one fires a storage event', () => {
+    announceClear();
+    const first = window.localStorage.getItem('ttt-lab:cleared-at');
+    announceClear();
+    const second = window.localStorage.getItem('ttt-lab:cleared-at');
+    expect(first).not.toBeNull();
+    expect(second).not.toBe(first);
   });
 });
 
