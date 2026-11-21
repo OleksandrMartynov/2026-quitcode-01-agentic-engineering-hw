@@ -1,0 +1,14 @@
+{
+  "A1": {"base": "exemplar", "tokens": 68450, "toolUses": 3, "durationMs": 19735, "filesRead": 4, "edits": 0, "selfTsc": false},
+  "A2": {"base": "exemplar", "tokens": 68337, "toolUses": 4, "durationMs": 20067, "filesRead": 2, "edits": 0, "selfTsc": false},
+  "A3": {"base": "exemplar", "tokens": 68564, "toolUses": 3, "durationMs": 21973, "filesRead": 3, "edits": 0, "selfTsc": false},
+  "B1": {"base": "exemplar", "tokens": 71465, "toolUses": 9, "durationMs": 40918, "filesRead": 3, "edits": 1, "selfTsc": false},
+  "B2": {"base": "exemplar", "tokens": 69085, "toolUses": 5, "durationMs": 23581, "filesRead": 2, "edits": 0, "selfTsc": false},
+  "B3": {"base": "exemplar", "tokens": 69829, "toolUses": 6, "durationMs": 29688, "filesRead": 2, "edits": 0, "selfTsc": true},
+  "A4": {"base": "noExemplar", "tokens": 67056, "toolUses": 3, "durationMs": 17761, "filesRead": 4, "edits": 0, "selfTsc": false},
+  "A5": {"base": "noExemplar", "tokens": 73549, "toolUses": 6, "durationMs": 32563, "filesRead": 8, "edits": 0, "selfTsc": false},
+  "A6": {"base": "noExemplar", "tokens": 67169, "toolUses": 3, "durationMs": 20354, "filesRead": 5, "edits": 0, "selfTsc": false},
+  "B4": {"base": "noExemplar", "tokens": 73419, "toolUses": 10, "durationMs": 47105, "filesRead": 1, "edits": 1, "selfTsc": true},
+  "B5": {"base": "noExemplar", "tokens": 72401, "toolUses": 12, "durationMs": 54343, "filesRead": 1, "edits": 1, "selfTsc": true},
+  "B6": {"base": "noExemplar", "tokens": 75142, "toolUses": 10, "durationMs": 51684, "filesRead": 1, "edits": 0, "selfTsc": true}
+}
