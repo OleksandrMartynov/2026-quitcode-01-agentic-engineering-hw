@@ -23,10 +23,24 @@ Node 22+ is required.
 | **Classic** | 3x3, three in a row. |
 | **Vanishing** | Each player keeps at most three marks; placing a fourth removes the oldest one — *before* the win check, so a vanishing mark can never complete a line. A draw is impossible. |
 | **Grand** | 4x4 or 5x5 with a selectable win length (4 or 5 in a row). |
-| **Blitz** | 3x3 against a per-move clock (5/10/20 s). Running out of time loses the game. |
+| **Blitz** | 3x3 against a per-move clock (5/10/20 s). Running out of time loses the game. The clock starts after the first move (so reloading the page never costs a game), and moves cannot be rewound — that would reset the clock. |
 
 The opponent is an independent setting and works in every mode: two players on
 one screen, or the computer at one of three levels.
+
+## Features
+
+- **Time travel** — every move in the *Moves* panel is a point you can rewind to
+  (in every mode except Blitz).
+- **Hints** — *Show a hint* asks the hard AI for the best move for whoever is on
+  turn; the cell pulses until the position changes (a move, a rewind, a restart).
+- **Match history** — the last 25 finished games, with the player names as they
+  were at the time.
+- **Replay** — any stored game can be stepped through move by move or played
+  back automatically, vanished marks included. Positions are rebuilt by the
+  engine from the stored move list, never stored as pictures.
+- **Statistics** — results per mode, your win rate per computer level, average
+  game length and your best winning streak, derived from the stored history.
 
 ## The computer opponent
 
@@ -53,7 +67,9 @@ lib/game/           framework-free, pure TypeScript
   engine.ts         applyMove / rewindTo / applyTimeout — the source of truth
   search.ts         a fast mutable mirror of the move rules for the AI search
   ai.ts             easy / medium / hard move choice
-  stats.ts          match records and the scoreboard
+  stats.ts          match records, the scoreboard and the statistics summary
+  replay.ts         rebuilds a stored match move by move; validates move lists
+  notation.ts       cell names (A1, B2, …)
   storage.ts        localStorage with validation of everything it reads
   __checks__/       AI verification games and shared test helpers
 lib/useGame.ts      the single hook wiring the engine, timers and storage to React
@@ -76,22 +92,40 @@ duplicate records and replaces bad counts or settings with defaults, so a
 corrupted entry can never crash a render. The hook only writes back after it
 has read, which also heals the stored data.
 
+Every record must also describe a game that can exist: a line win has the right
+parity for its winner and at least `2 × winLength − 1` moves, a draw needs a full
+board (so never in Vanishing), and a timeout only happens in a timed mode, lost
+by the player on turn (`storage.ts#isPlausibleOutcome`).
+
+A stored move list is validated **by simulation**: `replay.ts` plays it through
+the engine, and the record is kept only if every move is legal and the final
+position reproduces the stored result (winner, draw, or the player who ran out
+of time). A record that contradicts its own moves is dropped.
+
+Two open tabs share one history: each tab listens for the `storage` event and
+adopts the other's changes before writing its own, and identical writes are
+skipped so the tabs do not echo each other.
+
 A game keeps its id when you rewind it. Finishing a rewound game therefore
 *replaces* its record (`stats.ts#recordMatch`) — the scoreboard moves the old
 result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 95 tests in about 2.3 s:
+`npm test` runs 153 tests in about 4 s; `npm run test:coverage` adds a coverage
+report and fails if `lib/game/*` drops below 95 % of lines.
 
 | File | What it pins down |
 |---|---|
 | `rules.test.ts` | line generation for every board, no wrap-around diagonals |
 | `engine.test.ts` | moves, draws, vanishing order, timeouts, rewind |
-| `search.test.ts` | the AI's rule mirror agrees with the engine (differential) |
-| `storage.test.ts` | corrupted / legacy localStorage payloads |
-| `stats.test.ts` | records and scoreboard, replayed games counted once |
-| `useGame.test.ts` | the hook end to end: storage healing, rewind, AI and blitz timers |
+| `search.test.ts` | the AI's rule mirror agrees with the engine (differential, 1 200 games) |
+| `ai.test.ts` | legal moves at every level, hints win and block |
+| `replay.test.ts` | replays rebuild every position; 400 random games re-validate |
+| `storage.test.ts` | corrupted, legacy and tampered localStorage payloads |
+| `stats.test.ts` | records, scoreboard, replayed games counted once, statistics |
+| `useGame.test.ts` | the hook end to end: storage healing, rewind, hints, AI and blitz timers, two tabs |
+| `components/*.test.tsx` | the whole screen and the replay viewer, clicked through in jsdom, incl. screen-reader announcements |
 | `__checks__/ai-strength.test.ts` | 690 seeded games: hard never loses on 3x3, hard vs hard always draws, Vanishing never draws, ≤ 250 ms per move on 5x5 |
 
 All random games are seeded, so a failure replays exactly.
@@ -102,7 +136,7 @@ GitHub Pages is configured as *Deploy from a branch* on `main` / root, so a
 release is the static export copied into the repository root of `main`.
 
 The CI workflow (`.github/workflows/ci.yml`) runs lint, typecheck, tests and the
-build on every push and PR, then builds that exact export and uploads it as the
+build on every pull request, on pushes to `ws01/**` branches and on demand, then builds that exact export and uploads it as the
 `pages-export` artifact — the deployment can be reproduced from the PR's code
 without a local machine. Publishing is unzipping the artifact into the root of
 `main`. Locally the same build is:

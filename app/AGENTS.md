@@ -18,6 +18,11 @@ Each rule below exists because breaking it already cost a bug or a rewrite.
   `lib/game/storage.ts`.** Never cast `JSON.parse` output to a type; stored data
   is untrusted, and the app writes its state back after mounting, so one bad
   value would crash every reload.
+- **Validate content, not only shape.** A stored record with moves is accepted only
+  if `replay.ts#movesMatchResult` reproduces its result; keep that check when the
+  record format changes.
+- **Reuse an existing component as the pattern** before writing a new one — the
+  A/B replication showed the codebase steers the agent more than the prompt does.
 - **Move rules live in two places**: `engine.ts#applyMove` (source of truth) and
   `search.ts` (fast mirror for the AI). Change both; `search.test.ts` must stay green.
 - **A game keeps its id across rewinds.** Anything keyed by game id must treat a
