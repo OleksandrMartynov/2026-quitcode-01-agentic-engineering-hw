@@ -14,7 +14,7 @@ npm test           # vitest: unit, regression and AI verification checks
 npm run check      # all of the above, in the order CI runs them
 ```
 
-Node 22+ is required.
+Node `^22.22.2 || ^24.15.0 || >=26.0.0` is required — the range `jsdom` (tests) supports; `package.json#engines` declares the same.
 
 ## Modes
 
@@ -112,7 +112,9 @@ and it runs under one Web Lock (`navigator.locks`, name `ttt-lab:stats`) shared
 by all tabs, so simultaneous updates are applied one after the other instead of
 the later one winning. Browsers without the Locks API run the update
 synchronously in a single task. Stats received through the `storage` event are
-only displayed, never written back. *Clear history* stores the empty stats and
+only displayed, never written back. If storage refuses writes (quota, blocked),
+the tab keeps the result it could not store and starts its next change from
+it, so the session never loses a game. *Clear history* stores the empty stats and
 then bumps `ttt-lab:cleared-at`, an explicit clear signal; only that signal makes
 the other tabs forget what their current game added to the score.
 
@@ -122,7 +124,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 173 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 175 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below its thresholds (95 % of lines). CI
 runs the coverage variant, so the threshold is enforced on every push. The AI
 speed budget (`__checks__/ai-speed.test.ts`, ≤ 250 ms per hard move on 5x5) is a
