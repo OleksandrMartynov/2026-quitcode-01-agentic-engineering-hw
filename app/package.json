@@ -10,8 +10,9 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run build",
-    "test:coverage": "vitest run --coverage"
+    "check": "npm run lint && npm run typecheck && npm run test:coverage && npm run test:speed && npm run build",
+    "test:coverage": "vitest run --coverage --exclude \"**/ai-speed.test.ts\"",
+    "test:speed": "vitest run lib/game/__checks__/ai-speed.test.ts"
   },
   "dependencies": {
     "@porsche-design-system/components-react": "^4.6.0",

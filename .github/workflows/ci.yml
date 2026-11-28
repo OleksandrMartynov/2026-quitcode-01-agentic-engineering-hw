@@ -43,6 +43,8 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
+      # Wall-clock AI budget, measured without coverage instrumentation.
+      - run: npm run test:speed
       - run: npm run build
 
   pages-export:

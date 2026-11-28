@@ -121,24 +121,6 @@ describe('medium AI', () => {
   });
 });
 
-describe('grand boards stay responsive', () => {
-  it.each([
-    [4, 4],
-    [5, 4],
-    [5, 5],
-  ])('%ix%i, %i in a row: every hard move takes under 250 ms', (size, winLength) => {
-    let slowest = 0;
-    let state = newGame('grand', { size, winLength, difficulty: 'hard', opponent: 'human' });
-    for (let ply = 0; ply < size * size && state.outcome.type === 'playing'; ply++) {
-      const started = performance.now();
-      const cell = chooseMove(state);
-      slowest = Math.max(slowest, performance.now() - started);
-      state = applyMove(state, cell);
-    }
-    expect(slowest).toBeLessThan(250);
-  });
-});
-
 describe('mode table', () => {
   it('marks a mode exhaustive only if the hard search reaches the end of the game', () => {
     for (const [mode, config] of Object.entries(MODES)) {

@@ -124,7 +124,10 @@ result out and the new one in, so each game counts exactly once.
 
 `npm test` runs 173 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below its thresholds (95 % of lines). CI
-runs the coverage variant, so the threshold is enforced on every push.
+runs the coverage variant, so the threshold is enforced on every push. The AI
+speed budget (`__checks__/ai-speed.test.ts`, ≤ 250 ms per hard move on 5x5) is a
+wall-clock check, so it runs separately as `npm run test:speed` — coverage
+instrumentation slows the search several times and would make it meaningless.
 
 | File | What it pins down |
 |---|---|
@@ -137,7 +140,8 @@ runs the coverage variant, so the threshold is enforced on every push.
 | `stats.test.ts` | records, scoreboard, replayed games counted once, statistics |
 | `useGame.test.ts` | the hook end to end: storage healing, rewind, hints, AI and blitz timers, two tabs |
 | `components/*.test.tsx` | the whole screen and the replay viewer, clicked through in jsdom, incl. screen-reader announcements |
-| `__checks__/ai-strength.test.ts` | 690 seeded games: hard never loses on 3x3, hard vs hard always draws, Vanishing never draws, ≤ 250 ms per move on 5x5 |
+| `__checks__/ai-strength.test.ts` | 690 seeded games: hard never loses on 3x3, hard vs hard always draws, Vanishing never draws |
+| `__checks__/ai-speed.test.ts` | every hard move on 4x4 and 5x5 stays under 250 ms (run without coverage) |
 
 All random games are seeded, so a failure replays exactly.
 
