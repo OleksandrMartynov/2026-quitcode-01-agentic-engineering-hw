@@ -42,7 +42,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run test:coverage
       - run: npm run build
 
   pages-export:
@@ -65,6 +65,8 @@ jobs:
       - name: Build static export
         run: |
           export PAGES_BASE_PATH="/${GITHUB_REPOSITORY#*/}"
+          # Shown in the page header, so the live demo names its commit.
+          export NEXT_PUBLIC_BUILD_SHA="${GITHUB_SHA::7}"
           GITHUB_PAGES=true npm run build
           # Jekyll would skip _next/, leaving the page without CSS and JS.
           touch out/.nojekyll
