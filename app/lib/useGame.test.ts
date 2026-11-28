@@ -526,6 +526,39 @@ describe('blocked storage', () => {
   });
 });
 
+describe('storage that recovers', () => {
+  it('replays unsaved games on top of what another tab stored meanwhile', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+
+    // Writes fail while this tab wins its first game...
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins
+    } finally {
+      spy.mockRestore();
+    }
+    const ownFirst = result.current.history[0];
+
+    // ...storage recovers, and another tab stores an O win of its own.
+    const otherGame = { ...ownFirst, id: 'other-tab', result: 'O', moveCount: 6, moves: [0, 3, 1, 4, 8, 5] };
+    window.localStorage.setItem('ttt-lab:history', JSON.stringify([otherGame]));
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 1, draws: 0 }));
+
+    // This tab's next game must keep the other tab's game AND its own first one.
+    act(() => result.current.restart());
+    for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins again
+
+    const ids = (stored('history') as { id: string }[]).map((record) => record.id);
+    expect(ids).toHaveLength(3);
+    expect(ids).toContain('other-tab');
+    expect(ids).toContain(ownFirst.id);
+    expect(stored('scoreboard')).toEqual({ X: 2, O: 1, draws: 0 });
+  });
+});
+
 describe('settings', () => {
   it('trims empty names back to defaults and persists the started settings', () => {
     const { result } = mount();

@@ -221,15 +221,39 @@ export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard };
 
 export const loadStats = (): StoredStats => ({ history: loadHistory(), scoreboard: loadScoreboard() });
 
-/** True only if both parts are now in storage. */
+/** Puts a key back to a raw value read earlier (null: the key did not exist). */
+const restore = (key: string, raw: string | null): void => {
+  try {
+    if (raw === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, raw);
+  } catch {
+    // Nothing more can be done; the caller already treats the save as failed.
+  }
+};
+
+/**
+ * Stores history and score all-or-nothing: if either write fails, both keys
+ * are put back as they were. A half-written pair (a game in the history but
+ * not in the score) would make the retry count that game twice.
+ */
 const saveStats = (stats: StoredStats): boolean => {
-  const history = saveHistory(stats.history);
-  const scoreboard = saveScoreboard(stats.scoreboard);
-  return history && scoreboard;
+  if (typeof window === 'undefined') return false;
+  let before: [string | null, string | null];
+  try {
+    before = [window.localStorage.getItem(KEYS.history), window.localStorage.getItem(KEYS.scoreboard)];
+  } catch {
+    return false;
+  }
+  if (saveHistory(stats.history) && saveScoreboard(stats.scoreboard)) return true;
+  restore(KEYS.history, before[0]);
+  restore(KEYS.scoreboard, before[1]);
+  return false;
 };
 
 /** Name of the Web Lock that serializes stats updates across tabs. */
 export const STATS_LOCK = 'ttt-lab:stats';
+
+export type StatsChange = (stats: StoredStats) => StoredStats;
 
 /**
  * The only way the app changes the stored history and score: `change` is
@@ -242,17 +266,20 @@ export const STATS_LOCK = 'ttt-lab:stats';
  * applied one after the other instead of the later write winning. Without it
  * (old browsers, tests) the update runs synchronously in a single task.
  *
- * When storage refuses writes (quota, blocked), storage no longer reflects
- * the session, so the caller passes `unsaved` — the last result it could not
- * store — and the next change starts from that instead of from storage.
+ * When storage refuses writes (quota, blocked), the caller keeps the changes
+ * that were not stored and passes them as `pending`. They are re-applied, in
+ * order, to the fresh stats before `change` — so the session keeps every game
+ * it played, and once storage works again those games land on top of whatever
+ * other tabs stored meanwhile instead of overwriting it. Because the save is
+ * all-or-nothing, a pending change is never applied twice.
  */
 export const updateStoredStats = (
-  change: (stats: StoredStats) => StoredStats,
+  change: StatsChange,
   done: (stats: StoredStats, saved: boolean) => void,
-  unsaved: () => StoredStats | null = () => null
+  pending: () => readonly StatsChange[] = () => []
 ): void => {
   const run = () => {
-    const next = change(unsaved() ?? loadStats());
+    const next = [...pending(), change].reduce((stats, apply) => apply(stats), loadStats());
     done(next, saveStats(next));
   };
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;

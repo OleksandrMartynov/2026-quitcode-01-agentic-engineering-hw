@@ -14,6 +14,7 @@ import {
 } from './storage';
 import { DEFAULT_SETTINGS } from './types';
 import type { MatchRecord } from './types';
+import type { StoredStats } from './storage';
 
 const validRecord = (patch: Partial<MatchRecord> = {}): MatchRecord => ({
   id: 'game-1',
@@ -230,22 +231,48 @@ describe('updateStoredStats', () => {
     expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 2, O: 1, draws: 0 } }, true);
   });
 
-  it('reports a failed write and continues from the unsaved copy it is given', () => {
+  it('reports a failed write and re-applies pending changes to fresh storage', () => {
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 3, O: 0, draws: 0 }));
+    const bumpX = (current: StoredStats): StoredStats => ({
+      ...current,
+      scoreboard: { ...current.scoreboard, X: current.scoreboard.X + 1 },
+    });
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });
     const done = vi.fn();
-    const unsaved = { history: [], scoreboard: { X: 3, O: 0, draws: 0 } };
     try {
-      updateStoredStats(
-        (current) => ({ ...current, scoreboard: { ...current.scoreboard, X: current.scoreboard.X + 1 } }),
-        done,
-        () => unsaved
-      );
+      // One earlier change is still pending, plus the new one.
+      updateStoredStats(bumpX, done, () => [bumpX]);
     } finally {
       spy.mockRestore();
     }
-    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 4, O: 0, draws: 0 } }, false);
+    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 5, O: 0, draws: 0 } }, false);
+  });
+
+  it('never leaves history and score half-written', () => {
+    window.localStorage.setItem('ttt-lab:history', '[]');
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 0, draws: 0 }));
+    const setItem = Storage.prototype.setItem;
+    // The history write succeeds, the score write fails.
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string
+    ) {
+      if (key === 'ttt-lab:scoreboard') throw new DOMException('quota', 'QuotaExceededError');
+      setItem.call(this, key, value);
+    });
+    const done = vi.fn();
+    try {
+      updateStoredStats(() => ({ history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }), done);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(done).toHaveBeenCalledWith(expect.anything(), false);
+    // The history write was rolled back, so a retry cannot count the game twice.
+    expect(window.localStorage.getItem('ttt-lab:history')).toBe('[]');
+    expect(loadScoreboard()).toEqual({ X: 0, O: 0, draws: 0 });
   });
 
   it('runs every update under one Web Lock, one after the other', async () => {

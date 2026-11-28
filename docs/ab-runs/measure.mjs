@@ -21,9 +21,10 @@ const [exemplarApp, noExemplarApp] = process.argv.slice(2);
 const bases = { exemplar: exemplarApp, noExemplar: noExemplarApp };
 
 const typeCheck = (appPath, batch) => {
-  // A fresh, uniquely named folder inside the project (so tsconfig includes
-  // it); only this folder is removed afterwards, never anything that was there.
-  const target = mkdtempSync(join(appPath, 'components', '__ab-'));
+  // A fresh, uniquely named folder at the project root — tsconfig includes
+  // every **/*.tsx, and the no-exemplar base has no components/ folder at all.
+  // Only this folder is removed afterwards, never anything that was there.
+  const target = mkdtempSync(join(appPath, '__ab-'));
   const folder = basename(target);
   let output = '';
   try {

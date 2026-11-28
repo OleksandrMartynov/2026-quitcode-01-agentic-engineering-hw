@@ -13,6 +13,7 @@ import {
   saveSettings,
   STORAGE_KEYS,
 } from './game/storage';
+import type { StatsChange } from './game/storage';
 import { AI, DEFAULT_SETTINGS, MODES, finalizeSettings } from './game/types';
 import type { GameState, MatchRecord, Settings } from './game/types';
 
@@ -37,22 +38,23 @@ export const useGame = () => {
    */
   const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
   /**
-   * Stats this tab could not store (storage full or blocked). While set, the
-   * next change starts from here, so the session keeps every game it played.
+   * Changes this tab could not store (storage full or blocked). Each update
+   * re-applies them to the fresh stats first, so the session keeps every game
+   * and nothing another tab stored meanwhile is overwritten.
    */
-  const unsavedRef = useRef<MatchStats | null>(null);
+  const pendingRef = useRef<StatsChange[]>([]);
 
   /** Every change to history and score goes through here; see updateStoredStats. */
   const commitStats = useCallback(
-    (change: (stats: MatchStats) => MatchStats, after?: (stats: MatchStats) => void) =>
+    (change: StatsChange, after?: (stats: MatchStats) => void) =>
       updateStoredStats(
         change,
         (next, saved) => {
-          unsavedRef.current = saved ? null : next;
+          pendingRef.current = saved ? [] : [...pendingRef.current, change];
           after?.(next);
           setStats(next);
         },
-        () => unsavedRef.current
+        () => pendingRef.current
       ),
     []
   );
