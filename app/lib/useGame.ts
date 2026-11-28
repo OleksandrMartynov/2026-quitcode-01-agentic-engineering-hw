@@ -94,7 +94,7 @@ export const useGame = () => {
   // stale mix read while the other tab was mid-write cannot overwrite anything.
   useEffect(() => {
     if (!hydrated) return;
-    const watched: string[] = [STORAGE_KEYS.history, STORAGE_KEYS.scoreboard, STORAGE_KEYS.clearedAt];
+    const watched: string[] = [STORAGE_KEYS.stats, STORAGE_KEYS.clearedAt];
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && !watched.includes(event.key)) return;
       // Only an explicit clear (its own key, or localStorage.clear() with
@@ -104,7 +104,9 @@ export const useGame = () => {
       if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
         countedRef.current = null;
       }
-      setStats(loadStats());
+      // The view is what storage holds plus this tab's unsaved changes, so
+      // games that could not be stored do not vanish from the screen.
+      setStats(pendingRef.current.reduce((stats, apply) => apply(stats), loadStats()));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);

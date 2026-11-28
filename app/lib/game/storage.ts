@@ -12,10 +12,17 @@ import type { MatchRecord, Player, Scoreboard, Settings } from './types';
 
 export const STORAGE_KEYS = {
   settings: 'ttt-lab:settings',
-  history: 'ttt-lab:history',
-  scoreboard: 'ttt-lab:scoreboard',
+  /**
+   * History and score in ONE value, so a single setItem stores both or
+   * neither — there is no half-written state (a game in the history but not
+   * in the score) for a retry to count twice.
+   */
+  stats: 'ttt-lab:stats',
   /** Bumped on every "Clear history": the explicit cross-tab clear signal. */
   clearedAt: 'ttt-lab:cleared-at',
+  /** Before `stats`: history and score in separate keys. Read once to migrate. */
+  legacyHistory: 'ttt-lab:history',
+  legacyScoreboard: 'ttt-lab:scoreboard',
 } as const;
 const KEYS = STORAGE_KEYS;
 
@@ -219,35 +226,41 @@ export const announceClear = (): void => {
 
 export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard };
 
-export const loadStats = (): StoredStats => ({ history: loadHistory(), scoreboard: loadScoreboard() });
-
-/** Puts a key back to a raw value read earlier (null: the key did not exist). */
-const restore = (key: string, raw: string | null): void => {
-  try {
-    if (raw === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, raw);
-  } catch {
-    // Nothing more can be done; the caller already treats the save as failed.
-  }
+export const parseStats = (raw: unknown): StoredStats => {
+  const stored = isObject(raw) ? raw : {};
+  return { history: parseHistory(stored.history), scoreboard: parseScoreboard(stored.scoreboard) };
 };
 
 /**
- * Stores history and score all-or-nothing: if either write fails, both keys
- * are put back as they were. A half-written pair (a game in the history but
- * not in the score) would make the retry count that game twice.
+ * Reads history and score. Data written by earlier versions — two separate
+ * keys — is read when the combined key does not exist yet; the next save
+ * moves it over.
  */
+export const loadStats = (): StoredStats => {
+  const combined = read(KEYS.stats);
+  if (combined !== undefined) return parseStats(combined);
+  return {
+    history: parseHistory(read(KEYS.legacyHistory)),
+    scoreboard: parseScoreboard(read(KEYS.legacyScoreboard)),
+  };
+};
+
+/** One atomic write of history and score; true if they are now in storage. */
 const saveStats = (stats: StoredStats): boolean => {
-  if (typeof window === 'undefined') return false;
-  let before: [string | null, string | null];
-  try {
-    before = [window.localStorage.getItem(KEYS.history), window.localStorage.getItem(KEYS.scoreboard)];
-  } catch {
-    return false;
+  const saved = write(KEYS.stats, {
+    history: stats.history.slice(0, HISTORY_LIMIT),
+    scoreboard: stats.scoreboard,
+  });
+  if (saved) {
+    // Migrated: the legacy keys are no longer read, so drop them.
+    try {
+      window.localStorage.removeItem(KEYS.legacyHistory);
+      window.localStorage.removeItem(KEYS.legacyScoreboard);
+    } catch {
+      // Harmless leftovers; loadStats prefers the combined key.
+    }
   }
-  if (saveHistory(stats.history) && saveScoreboard(stats.scoreboard)) return true;
-  restore(KEYS.history, before[0]);
-  restore(KEYS.scoreboard, before[1]);
-  return false;
+  return saved;
 };
 
 /** Name of the Web Lock that serializes stats updates across tabs. */
@@ -296,12 +309,6 @@ export const saveSettings = (settings: Settings): void => {
   write(KEYS.settings, settings);
 };
 
-export const loadHistory = (): MatchRecord[] => parseHistory(read(KEYS.history));
+export const loadHistory = (): MatchRecord[] => loadStats().history;
 
-export const saveHistory = (history: MatchRecord[]): boolean =>
-  write(KEYS.history, history.slice(0, HISTORY_LIMIT));
-
-export const loadScoreboard = (): Scoreboard => parseScoreboard(read(KEYS.scoreboard));
-
-export const saveScoreboard = (scoreboard: Scoreboard): boolean =>
-  write(KEYS.scoreboard, scoreboard);
+export const loadScoreboard = (): Scoreboard => loadStats().scoreboard;

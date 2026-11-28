@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HISTORY_LIMIT,
   announceClear,
+  loadStats,
   updateStoredStats,
   loadHistory,
   loadScoreboard,
@@ -250,29 +251,40 @@ describe('updateStoredStats', () => {
     expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 5, O: 0, draws: 0 } }, false);
   });
 
-  it('never leaves history and score half-written', () => {
-    window.localStorage.setItem('ttt-lab:history', '[]');
-    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 0, draws: 0 }));
-    const setItem = Storage.prototype.setItem;
-    // The history write succeeds, the score write fails.
-    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
-      this: Storage,
-      key: string,
-      value: string
-    ) {
-      if (key === 'ttt-lab:scoreboard') throw new DOMException('quota', 'QuotaExceededError');
-      setItem.call(this, key, value);
+  it('stores history and score in one write, so a failure leaves both untouched', () => {
+    const before = JSON.stringify({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
+    window.localStorage.setItem('ttt-lab:stats', before);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
     });
     const done = vi.fn();
     try {
       updateStoredStats(() => ({ history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }), done);
     } finally {
-      spy.mockRestore();
+      setItem.mockRestore();
     }
     expect(done).toHaveBeenCalledWith(expect.anything(), false);
-    // The history write was rolled back, so a retry cannot count the game twice.
-    expect(window.localStorage.getItem('ttt-lab:history')).toBe('[]');
-    expect(loadScoreboard()).toEqual({ X: 0, O: 0, draws: 0 });
+    // There is no second key that could hold half of the change.
+    expect(window.localStorage.getItem('ttt-lab:stats')).toBe(before);
+
+    const writes = vi.spyOn(Storage.prototype, 'setItem');
+    updateStoredStats(() => ({ history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }), () => {});
+    expect(writes.mock.calls.map(([key]) => key)).toEqual(['ttt-lab:stats']);
+    writes.mockRestore();
+  });
+
+  it('migrates history and score from the two legacy keys on the first save', () => {
+    window.localStorage.setItem('ttt-lab:history', JSON.stringify([validRecord()]));
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 4, O: 2, draws: 1 }));
+    expect(loadStats()).toEqual({ history: [validRecord()], scoreboard: { X: 4, O: 2, draws: 1 } });
+
+    updateStoredStats((current) => current, () => {});
+    expect(JSON.parse(window.localStorage.getItem('ttt-lab:stats')!)).toEqual({
+      history: [validRecord()],
+      scoreboard: { X: 4, O: 2, draws: 1 },
+    });
+    expect(window.localStorage.getItem('ttt-lab:history')).toBeNull();
+    expect(window.localStorage.getItem('ttt-lab:scoreboard')).toBeNull();
   });
 
   it('runs every update under one Web Lock, one after the other', async () => {

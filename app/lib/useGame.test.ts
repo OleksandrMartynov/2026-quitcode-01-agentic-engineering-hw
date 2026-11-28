@@ -12,7 +12,29 @@ import { useGame } from './useGame';
  */
 
 const twoPlayers: Settings = { ...DEFAULT_SETTINGS, opponent: 'human' };
-const stored = (key: string): unknown => JSON.parse(window.localStorage.getItem(`ttt-lab:${key}`) ?? 'null');
+const STATS = 'ttt-lab:stats';
+
+/** Reads a stored value; history and score are parts of one combined value. */
+const stored = (key: string): unknown => {
+  if (key === 'history' || key === 'scoreboard') {
+    const raw = window.localStorage.getItem(STATS);
+    return raw === null ? null : (JSON.parse(raw) as Record<string, unknown>)[key];
+  }
+  return JSON.parse(window.localStorage.getItem(`ttt-lab:${key}`) ?? 'null');
+};
+
+/** What another tab writes: the combined value, merged with what is stored. */
+const writeStats = (patch: { history?: unknown; scoreboard?: unknown }): string => {
+  const raw = window.localStorage.getItem(STATS);
+  const current = raw === null ? { history: [], scoreboard: { X: 0, O: 0, draws: 0 } } : JSON.parse(raw);
+  const newValue = JSON.stringify({ ...current, ...patch });
+  window.localStorage.setItem(STATS, newValue);
+  return newValue;
+};
+
+/** The storage event a browser delivers to the other tabs. */
+const statsEvent = (newValue: string | null = window.localStorage.getItem(STATS)) =>
+  new StorageEvent('storage', { key: STATS, newValue });
 
 const mount = () => renderHook(() => useGame());
 
@@ -288,11 +310,9 @@ describe('two open tabs', () => {
       moves: null,
     }));
     // Like a real browser, the event carries the new value.
-    const newValue = JSON.stringify(others);
-    window.localStorage.setItem('ttt-lab:history', newValue);
-    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 26, O: 0, draws: 0 }));
+    const newValue = writeStats({ history: others, scoreboard: { X: 26, O: 0, draws: 0 } });
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
+      window.dispatchEvent(statsEvent(newValue));
     });
     expect(result.current.history.some((record) => record.id === result.current.game.id)).toBe(false);
 
@@ -312,12 +332,7 @@ describe('two open tabs', () => {
     for (const cell of [0, 3, 1, 4, 2]) act(() => tabA.result.current.play(cell));
     // The browser tells the other tab that localStorage changed.
     act(() => {
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: 'ttt-lab:history',
-          newValue: window.localStorage.getItem('ttt-lab:history'),
-        })
-      );
+      window.dispatchEvent(statsEvent());
     });
     expect(tabB.result.current.history).toHaveLength(1);
 
@@ -335,19 +350,19 @@ describe('two open tabs', () => {
     const won = result.current.history[0];
 
     // Another tab clears everything...
-    const send = (key: string, value: unknown) => {
-      const newValue = JSON.stringify(value);
-      window.localStorage.setItem(key, newValue);
+    const sendStats = (patch: { history?: unknown; scoreboard?: unknown }) => {
+      const newValue = writeStats(patch);
       act(() => {
-        window.dispatchEvent(new StorageEvent('storage', { key, newValue }));
+        window.dispatchEvent(statsEvent(newValue));
       });
     };
-    send('ttt-lab:history', []);
-    send('ttt-lab:scoreboard', { X: 0, O: 0, draws: 0 });
-    send('ttt-lab:cleared-at', 'clear-1');
+    sendStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
+    window.localStorage.setItem('ttt-lab:cleared-at', 'clear-1');
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:cleared-at', newValue: 'clear-1' }));
+    });
     // ...and then records an X win of its own.
-    send('ttt-lab:history', [{ ...won, id: 'other-tab-game' }]);
-    send('ttt-lab:scoreboard', { X: 1, O: 0, draws: 0 });
+    sendStats({ history: [{ ...won, id: 'other-tab-game' }], scoreboard: { X: 1, O: 0, draws: 0 } });
     expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
 
     // This tab's old X win was cleared, so replaying its game must not take
@@ -362,11 +377,10 @@ describe('two open tabs', () => {
     act(() => result.current.startGame(twoPlayers));
     for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
 
-    // Garbage in the history, but the score (with this game's X win) untouched.
-    const newValue = '{not json';
-    window.localStorage.setItem('ttt-lab:history', newValue);
+    // Garbage in the history part, but the score (with this game's X win) intact.
+    const newValue = writeStats({ history: 'garbage' });
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
+      window.dispatchEvent(statsEvent(newValue));
     });
     expect(result.current.history).toEqual([]);
     expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
@@ -384,10 +398,9 @@ describe('two open tabs', () => {
 
     // Tab C wrote garbage; tab B parsed it and wrote [] back. The score — with
     // this game's X win — was never cleared, and no clear was announced.
-    const newValue = '[]';
-    window.localStorage.setItem('ttt-lab:history', newValue);
+    const newValue = writeStats({ history: [] });
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue }));
+      window.dispatchEvent(statsEvent(newValue));
     });
     expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
 
@@ -428,26 +441,25 @@ describe('two open tabs', () => {
     const { result } = mount();
     expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
 
-    // Another tab clears: this tab hears about the history first, and — as can
-    // happen across processes — still reads the old score at that moment,
-    // although the zeros have already been stored.
-    window.localStorage.setItem('ttt-lab:history', '[]');
-    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 0, draws: 0 }));
+    // Another tab clears; this tab gets the event but — as can happen across
+    // processes — still reads the old value at that moment, although the
+    // zeros have already been stored.
+    writeStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
     const getItem = Storage.prototype.getItem;
     let stale = true;
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (
       this: Storage,
       key: string
     ) {
-      if (stale && key === 'ttt-lab:scoreboard') {
+      if (stale && key === STATS) {
         stale = false;
-        return JSON.stringify({ X: 1, O: 0, draws: 0 });
+        return JSON.stringify({ history: [], scoreboard: { X: 1, O: 0, draws: 0 } });
       }
       return getItem.call(this, key);
     });
     try {
       act(() => {
-        window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:history', newValue: '[]' }));
+        window.dispatchEvent(statsEvent());
       });
     } finally {
       spy.mockRestore();
@@ -482,8 +494,7 @@ describe('two open tabs', () => {
       rewound: false,
       hinted: false,
     };
-    window.localStorage.setItem('ttt-lab:history', JSON.stringify([otherGame]));
-    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 1, draws: 0 }));
+    writeStats({ history: [otherGame], scoreboard: { X: 0, O: 1, draws: 0 } });
 
     act(() => result.current.play(2)); // this tab's X win
     expect((stored('history') as { id: string }[]).map((record) => record.id)).toEqual([
@@ -497,7 +508,7 @@ describe('two open tabs', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));
     for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
-    window.localStorage.setItem('ttt-lab:history', '[]');
+    writeStats({ history: [] });
     act(() => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'some-other-app' }));
     });
@@ -527,6 +538,30 @@ describe('blocked storage', () => {
 });
 
 describe('storage that recovers', () => {
+  it('keeps unsaved games on screen when another tab updates storage', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins, unsaved
+    } finally {
+      spy.mockRestore();
+    }
+    const own = result.current.history[0];
+
+    // Another tab stores an O win and the event arrives here.
+    const other = { ...own, id: 'other-tab', result: 'O', moveCount: 6, moves: [0, 3, 1, 4, 8, 5] };
+    const newValue = writeStats({ history: [other], scoreboard: { X: 0, O: 1, draws: 0 } });
+    act(() => {
+      window.dispatchEvent(statsEvent(newValue));
+    });
+
+    expect(result.current.history.map((record) => record.id)).toEqual([own.id, 'other-tab']);
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 1, draws: 0 });
+  });
+
   it('replays unsaved games on top of what another tab stored meanwhile', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));
@@ -544,8 +579,7 @@ describe('storage that recovers', () => {
 
     // ...storage recovers, and another tab stores an O win of its own.
     const otherGame = { ...ownFirst, id: 'other-tab', result: 'O', moveCount: 6, moves: [0, 3, 1, 4, 8, 5] };
-    window.localStorage.setItem('ttt-lab:history', JSON.stringify([otherGame]));
-    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 1, draws: 0 }));
+    writeStats({ history: [otherGame], scoreboard: { X: 0, O: 1, draws: 0 } });
 
     // This tab's next game must keep the other tab's game AND its own first one.
     act(() => result.current.restart());

@@ -66,7 +66,7 @@ describe('GameShell', () => {
     // The score names marks, not today's player names.
     expect(lightText(document.querySelector('.scoreboard__entry p-text:last-child')!)).toBe('X wins');
     expect(document.querySelectorAll('p-table-row')).not.toHaveLength(0);
-    expect(JSON.parse(window.localStorage.getItem('ttt-lab:scoreboard')!)).toEqual({ X: 1, O: 0, draws: 0 });
+    expect(JSON.parse(window.localStorage.getItem('ttt-lab:stats')!).scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
     // The statistics panel appears with the first stored game.
     expect(screen.getByText('Statistics')).toBeTruthy();
   });
@@ -117,7 +117,7 @@ describe('GameShell', () => {
 
     expect(document.querySelectorAll('p-table-row')).toHaveLength(0);
     expect(screen.queryByText('Statistics')).toBeNull();
-    expect(JSON.parse(window.localStorage.getItem('ttt-lab:history')!)).toEqual([]);
+    expect(JSON.parse(window.localStorage.getItem('ttt-lab:stats')!).history).toEqual([]);
   });
 
   it('announces every move for screen readers', () => {
