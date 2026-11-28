@@ -103,6 +103,10 @@ export const useGame = () => {
       // never does, so the remembered result is reset on the signal alone.
       if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
         countedRef.current = null;
+        // A clear also discards this tab's unsaved changes: they were made
+        // before it and would otherwise bring cleared games back. Changes made
+        // after the clear are queued from here on as usual.
+        pendingRef.current = [];
       }
       // The view is what storage holds plus this tab's unsaved changes, so
       // games that could not be stored do not vanish from the screen.
@@ -143,6 +147,8 @@ export const useGame = () => {
     // A cleared score holds nothing that a replayed game could take back —
     // here, and in every other open tab.
     countedRef.current = null;
+    // Unsaved changes predate the clear; it wipes them along with the rest.
+    pendingRef.current = [];
     // Order matters across tabs: the empty stats are stored BEFORE the signal,
     // so a tab reacting to it can only read the cleared state.
     commitStats(() => EMPTY_STATS, announceClear);

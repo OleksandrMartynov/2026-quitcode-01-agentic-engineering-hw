@@ -538,6 +538,34 @@ describe('blocked storage', () => {
 });
 
 describe('storage that recovers', () => {
+  it('drops unsaved games that another tab cleared, and keeps games played after', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins, unsaved
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Another tab clears the history: everything before the clear is gone.
+    writeStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
+    window.localStorage.setItem('ttt-lab:cleared-at', 'clear-1');
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:cleared-at', newValue: 'clear-1' }));
+    });
+    expect(result.current.history).toEqual([]);
+    expect(result.current.scoreboard).toEqual({ X: 0, O: 0, draws: 0 });
+
+    // Storage works again; a game played after the clear is stored on its own.
+    act(() => result.current.restart());
+    for (const cell of [0, 3, 1, 4, 8, 5]) act(() => result.current.play(cell)); // O wins
+    expect((stored('history') as { result: string }[]).map((record) => record.result)).toEqual(['O']);
+    expect(stored('scoreboard')).toEqual({ X: 0, O: 1, draws: 0 });
+  });
+
   it('keeps unsaved games on screen when another tab updates storage', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));
