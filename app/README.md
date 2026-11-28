@@ -105,25 +105,27 @@ the engine, and the record is kept only if every move is legal and the final
 position reproduces the stored result (winner, draw, or the player who ran out
 of time). A record that contradicts its own moves is dropped.
 
-Two open tabs share one history. Every change a tab makes — recording a game,
-clearing — is a read–modify–write applied to the stats **as they are in storage
-at that moment** (`storage.ts#updateStoredStats`), never to the tab's own copy,
-and it runs under one Web Lock (`navigator.locks`, name `ttt-lab:stats`) shared
-by all tabs, so simultaneous updates are applied one after the other instead of
-the later one winning. Browsers without the Locks API run the update
-synchronously in a single task. Stats received through the `storage` event are
-only displayed, never written back. History and score
-live in **one** key, `ttt-lab:stats`, so a single `setItem` stores both or
-neither — there is no half-written state to count twice (data from earlier
-versions, kept in two keys, is read once and migrated on the next save). If
-storage refuses writes (quota, blocked), the tab keeps the *changes* it could
-not store and re-applies them to the fresh stats on every update and on every
-storage event — so the session never loses a game, not even from the screen,
-and once storage works again its games land on top of whatever other tabs
-stored meanwhile. A clear — in this tab or announced by another — also discards
-the unsaved changes made before it, so cleared games never come back. *Clear history* stores the empty stats and
-then bumps `ttt-lab:cleared-at`, an explicit clear signal; only that signal makes
-the other tabs forget what their current game added to the score.
+Two open tabs share one history. Three rules keep it consistent:
+
+1. **One atomic value.** History, score and a *clear generation* live in one
+   key, `ttt-lab:stats`, so a single `setItem` stores all of them or none —
+   there is no half-written state to count twice. Data from earlier versions,
+   kept in two keys, is read once and migrated on the next save.
+2. **Changes, not snapshots.** Every change a tab makes — recording a game,
+   clearing — is a read–modify–write applied to the stats **as they are in
+   storage at that moment** (`storage.ts#updateStoredStats`), never to the
+   tab's own copy, under one Web Lock (`navigator.locks`, name `ttt-lab:stats`)
+   shared by all tabs. Browsers without the Locks API run it synchronously in a
+   single task. Stats received through the `storage` event only refresh the
+   view; they are never written back and decide nothing.
+3. **Generations, not events.** *Clear history* writes the empty stats with a
+   new generation. A change this tab could not store (quota, blocked) is kept
+   with the generation it was made in and re-applied on later updates only
+   while that generation is still in storage; the same holds for the result a
+   rewound game takes back from the score. Because the generation is read under
+   the lock from the same atomic value, a clear in another tab is honoured even
+   if its storage event arrives late or never — cleared games never come back,
+   and games played after the clear are kept.
 
 A game keeps its id when you rewind it. Finishing a rewound game therefore
 *replaces* its record (`stats.ts#recordMatch`) — the scoreboard moves the old
@@ -131,7 +133,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 180 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 181 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below its thresholds (95 % of lines). CI
 runs the coverage variant, so the threshold is enforced on every push. The AI
 speed budget (`__checks__/ai-speed.test.ts`, ≤ 250 ms per hard move on 5x5) is a
