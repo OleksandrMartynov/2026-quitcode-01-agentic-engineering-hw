@@ -191,16 +191,19 @@ const read = (key: string): unknown => {
   }
 };
 
-const write = (key: string, value: unknown): void => {
-  if (typeof window === 'undefined') return;
+/** Returns whether the value is now in storage (written, or already there). */
+const write = (key: string, value: unknown): boolean => {
+  if (typeof window === 'undefined') return false;
   try {
     const serialized = JSON.stringify(value);
     // Skipping identical writes keeps open tabs from echoing each other's
     // updates back and forth through the storage event.
-    if (window.localStorage.getItem(key) === serialized) return;
+    if (window.localStorage.getItem(key) === serialized) return true;
     window.localStorage.setItem(key, serialized);
+    return true;
   } catch {
     // Storage full or blocked — the game stays playable, it just won't persist.
+    return false;
   }
 };
 
@@ -210,16 +213,19 @@ const write = (key: string, value: unknown): void => {
  * exactly like a cleared history — so it gets a key of its own. The value is
  * unique per clear, so two clears in a row still fire two storage events.
  */
-export const announceClear = (): void =>
+export const announceClear = (): void => {
   write(KEYS.clearedAt, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+};
 
 export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard };
 
 export const loadStats = (): StoredStats => ({ history: loadHistory(), scoreboard: loadScoreboard() });
 
-const saveStats = (stats: StoredStats): void => {
-  saveHistory(stats.history);
-  saveScoreboard(stats.scoreboard);
+/** True only if both parts are now in storage. */
+const saveStats = (stats: StoredStats): boolean => {
+  const history = saveHistory(stats.history);
+  const scoreboard = saveScoreboard(stats.scoreboard);
+  return history && scoreboard;
 };
 
 /** Name of the Web Lock that serializes stats updates across tabs. */
@@ -229,21 +235,25 @@ export const STATS_LOCK = 'ttt-lab:stats';
  * The only way the app changes the stored history and score: `change` is
  * applied to the stats as they are in storage at that moment — never to a
  * copy held in memory, which another tab may have outdated — and the result
- * is stored and handed to `done`.
+ * is stored and handed to `done`, together with whether storing worked.
  *
  * Where the Web Locks API exists, the read–modify–write runs under one lock
  * shared by all tabs, so two tabs finishing a game at the same time are
  * applied one after the other instead of the later write winning. Without it
  * (old browsers, tests) the update runs synchronously in a single task.
+ *
+ * When storage refuses writes (quota, blocked), storage no longer reflects
+ * the session, so the caller passes `unsaved` — the last result it could not
+ * store — and the next change starts from that instead of from storage.
  */
 export const updateStoredStats = (
   change: (stats: StoredStats) => StoredStats,
-  done: (stats: StoredStats) => void
+  done: (stats: StoredStats, saved: boolean) => void,
+  unsaved: () => StoredStats | null = () => null
 ): void => {
   const run = () => {
-    const next = change(loadStats());
-    saveStats(next);
-    done(next);
+    const next = change(unsaved() ?? loadStats());
+    done(next, saveStats(next));
   };
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
   if (locks && typeof locks.request === 'function') {
@@ -255,13 +265,16 @@ export const updateStoredStats = (
 
 export const loadSettings = (): Settings => parseSettings(read(KEYS.settings));
 
-export const saveSettings = (settings: Settings): void => write(KEYS.settings, settings);
+export const saveSettings = (settings: Settings): void => {
+  write(KEYS.settings, settings);
+};
 
 export const loadHistory = (): MatchRecord[] => parseHistory(read(KEYS.history));
 
-export const saveHistory = (history: MatchRecord[]): void =>
+export const saveHistory = (history: MatchRecord[]): boolean =>
   write(KEYS.history, history.slice(0, HISTORY_LIMIT));
 
 export const loadScoreboard = (): Scoreboard => parseScoreboard(read(KEYS.scoreboard));
 
-export const saveScoreboard = (scoreboard: Scoreboard): void => write(KEYS.scoreboard, scoreboard);
+export const saveScoreboard = (scoreboard: Scoreboard): boolean =>
+  write(KEYS.scoreboard, scoreboard);

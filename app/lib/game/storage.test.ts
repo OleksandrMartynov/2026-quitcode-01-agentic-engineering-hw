@@ -227,7 +227,25 @@ describe('updateStoredStats', () => {
       done
     );
     expect(loadScoreboard()).toEqual({ X: 2, O: 1, draws: 0 });
-    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 2, O: 1, draws: 0 } });
+    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 2, O: 1, draws: 0 } }, true);
+  });
+
+  it('reports a failed write and continues from the unsaved copy it is given', () => {
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    const done = vi.fn();
+    const unsaved = { history: [], scoreboard: { X: 3, O: 0, draws: 0 } };
+    try {
+      updateStoredStats(
+        (current) => ({ ...current, scoreboard: { ...current.scoreboard, X: current.scoreboard.X + 1 } }),
+        done,
+        () => unsaved
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 4, O: 0, draws: 0 } }, false);
   });
 
   it('runs every update under one Web Lock, one after the other', async () => {

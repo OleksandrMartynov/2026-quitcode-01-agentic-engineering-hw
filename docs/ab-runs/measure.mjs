@@ -3,7 +3,7 @@
 // With the two app paths (the two experiment bases, see ../ab-experiment.md),
 // every file is also type-checked inside the project it was written for.
 import { execSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,28 +21,32 @@ const [exemplarApp, noExemplarApp] = process.argv.slice(2);
 const bases = { exemplar: exemplarApp, noExemplar: noExemplarApp };
 
 const typeCheck = (appPath, batch) => {
-  const target = join(appPath, 'components', '__ab__');
-  mkdirSync(target, { recursive: true });
-  for (const file of batch) cpSync(join(here, file), join(target, file));
+  // A fresh, uniquely named folder inside the project (so tsconfig includes
+  // it); only this folder is removed afterwards, never anything that was there.
+  const target = mkdtempSync(join(appPath, 'components', '__ab-'));
+  const folder = basename(target);
   let output = '';
   try {
-    execSync('npx tsc --noEmit', { cwd: appPath, stdio: 'pipe' });
-  } catch (error) {
-    output = String(error.stdout ?? '');
-    // tsc exits non-zero both for type errors and for failing to check at all.
-    // Only per-file diagnostics, "path(line,col): error TS…", mean the files
-    // were checked. No diagnostics (npx failed) or a global one such as
-    // TS18003 "No inputs were found" is a broken check, never "0 errors".
-    const diagnostics = output.split('\n').filter((line) => /error TS\d+/.test(line));
-    const global = diagnostics.filter((line) => !/\(\d+,\d+\): error TS\d+/.test(line));
-    if (diagnostics.length === 0 || global.length > 0) {
-      const reason = global.join('\n') || String(error.stderr ?? error.message);
-      throw new Error(`tsc could not check the files in ${appPath}:\n${reason}`);
+    for (const file of batch) cpSync(join(here, file), join(target, file));
+    try {
+      execSync('npx tsc --noEmit', { cwd: appPath, stdio: 'pipe' });
+    } catch (error) {
+      output = String(error.stdout ?? '');
+      // tsc exits non-zero both for type errors and for failing to check at all.
+      // Only per-file diagnostics, "path(line,col): error TS…", mean the files
+      // were checked. No diagnostics (npx failed) or a global one such as
+      // TS18003 "No inputs were found" is a broken check, never "0 errors".
+      const diagnostics = output.split('\n').filter((line) => /error TS\d+/.test(line));
+      const global = diagnostics.filter((line) => !/\(\d+,\d+\): error TS\d+/.test(line));
+      if (diagnostics.length === 0 || global.length > 0) {
+        const reason = global.join('\n') || String(error.stderr ?? error.message);
+        throw new Error(`tsc could not check the files in ${appPath}:\n${reason}`);
+      }
     }
   } finally {
     rmSync(target, { recursive: true, force: true });
   }
-  for (const file of batch) tscErrors[file] = count(output, new RegExp(`__ab__/${file}\\(`, 'g'));
+  for (const file of batch) tscErrors[file] = count(output, new RegExp(`${folder}/${file}\\(`, 'g'));
 };
 
 if (exemplarApp && noExemplarApp) {

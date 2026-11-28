@@ -37,6 +37,26 @@ export const useGame = () => {
    */
   const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
   /**
+   * Stats this tab could not store (storage full or blocked). While set, the
+   * next change starts from here, so the session keeps every game it played.
+   */
+  const unsavedRef = useRef<MatchStats | null>(null);
+
+  /** Every change to history and score goes through here; see updateStoredStats. */
+  const commitStats = useCallback(
+    (change: (stats: MatchStats) => MatchStats, after?: (stats: MatchStats) => void) =>
+      updateStoredStats(
+        change,
+        (next, saved) => {
+          unsavedRef.current = saved ? null : next;
+          after?.(next);
+          setStats(next);
+        },
+        () => unsavedRef.current
+      ),
+    []
+  );
+  /**
    * A hint belongs to the exact position it was computed for. Keying it by the
    * game object (every move, rewind or restart creates a new one) makes a
    * stale hint impossible without any clean-up code.
@@ -55,10 +75,10 @@ export const useGame = () => {
     setGame(createGame(stored));
     // Reading through updateStoredStats also writes the validated values back,
     // which heals corrupted entries for every tab.
-    updateStoredStats((current) => current, setStats);
+    commitStats((current) => current);
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
+  }, [commitStats]);
 
   // Persistence runs only after hydration, otherwise the defaults of the first
   // render would overwrite what is stored before it has been read.
@@ -121,14 +141,8 @@ export const useGame = () => {
     countedRef.current = null;
     // Order matters across tabs: the empty stats are stored BEFORE the signal,
     // so a tab reacting to it can only read the cleared state.
-    updateStoredStats(
-      () => EMPTY_STATS,
-      (cleared) => {
-        announceClear();
-        setStats(cleared);
-      }
-    );
-  }, []);
+    commitStats(() => EMPTY_STATS, announceClear);
+  }, [commitStats]);
 
   const aiTurn =
     game.settings.opponent === 'ai' && game.current === AI && game.outcome.type === 'playing';
@@ -213,8 +227,8 @@ export const useGame = () => {
     countedRef.current = { id: game.id, result: record.result };
     // Applied to storage as it is now, not to this tab's copy: a game another
     // tab finished meanwhile is kept even if its storage event has not arrived.
-    updateStoredStats((current) => recordMatch(current, record, counted), setStats);
-  }, [game, hydrated]);
+    commitStats((current) => recordMatch(current, record, counted));
+  }, [game, hydrated, commitStats]);
 
   return {
     settings,

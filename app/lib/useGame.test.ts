@@ -505,6 +505,27 @@ describe('two open tabs', () => {
   });
 });
 
+describe('blocked storage', () => {
+  it('keeps the session history and score when localStorage refuses writes', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    // Quota exceeded / storage blocked from here on.
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins
+      act(() => result.current.restart());
+      for (const cell of [0, 3, 1, 4, 8, 5]) act(() => result.current.play(cell)); // O wins
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(result.current.history.map((record) => record.result)).toEqual(['O', 'X']);
+    expect(result.current.scoreboard).toEqual({ X: 1, O: 1, draws: 0 });
+  });
+});
+
 describe('settings', () => {
   it('trims empty names back to defaults and persists the started settings', () => {
     const { result } = mount();
