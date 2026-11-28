@@ -134,6 +134,9 @@ export const parseRecord = (raw: unknown): MatchRecord | null => {
     moveCount: raw.moveCount,
     durationMs: raw.durationMs,
     moves: null,
+    // Records written before assists were tracked count as unassisted.
+    rewound: raw.rewound === true,
+    hinted: raw.hinted === true,
   };
 
   if (!isPlausibleOutcome(record)) return null;
@@ -209,6 +212,46 @@ const write = (key: string, value: unknown): void => {
  */
 export const announceClear = (): void =>
   write(KEYS.clearedAt, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard };
+
+export const loadStats = (): StoredStats => ({ history: loadHistory(), scoreboard: loadScoreboard() });
+
+const saveStats = (stats: StoredStats): void => {
+  saveHistory(stats.history);
+  saveScoreboard(stats.scoreboard);
+};
+
+/** Name of the Web Lock that serializes stats updates across tabs. */
+export const STATS_LOCK = 'ttt-lab:stats';
+
+/**
+ * The only way the app changes the stored history and score: `change` is
+ * applied to the stats as they are in storage at that moment — never to a
+ * copy held in memory, which another tab may have outdated — and the result
+ * is stored and handed to `done`.
+ *
+ * Where the Web Locks API exists, the read–modify–write runs under one lock
+ * shared by all tabs, so two tabs finishing a game at the same time are
+ * applied one after the other instead of the later write winning. Without it
+ * (old browsers, tests) the update runs synchronously in a single task.
+ */
+export const updateStoredStats = (
+  change: (stats: StoredStats) => StoredStats,
+  done: (stats: StoredStats) => void
+): void => {
+  const run = () => {
+    const next = change(loadStats());
+    saveStats(next);
+    done(next);
+  };
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+  if (locks && typeof locks.request === 'function') {
+    void locks.request(STATS_LOCK, run);
+  } else {
+    run();
+  }
+};
 
 export const loadSettings = (): Settings => parseSettings(read(KEYS.settings));
 

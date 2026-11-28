@@ -185,6 +185,24 @@ describe('hints', () => {
   });
 });
 
+describe('assists in the record', () => {
+  it('marks a hinted game and a rewound game in the history', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4]) act(() => result.current.play(cell));
+    act(() => result.current.requestHint());
+    expect(result.current.hintCell).toBe(2);
+    act(() => result.current.play(2));
+    expect(result.current.history[0]).toMatchObject({ hinted: true, rewound: false });
+
+    act(() => result.current.restart());
+    for (const cell of [0, 3, 1, 4, 8]) act(() => result.current.play(cell));
+    act(() => result.current.rewind(4));
+    act(() => result.current.play(2));
+    expect(result.current.history[0]).toMatchObject({ hinted: false, rewound: true });
+  });
+});
+
 describe('stored moves', () => {
   it('stores a replayable move list that survives a reload', () => {
     const first = mount();
@@ -437,6 +455,42 @@ describe('two open tabs', () => {
 
     // The stale score may be shown for a moment, but it must not be stored.
     expect(stored('scoreboard')).toEqual({ X: 0, O: 0, draws: 0 });
+  });
+
+  it('records on top of a game another tab stored, even before its event arrives', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    for (const cell of [0, 3, 1, 4]) act(() => result.current.play(cell));
+
+    // Another tab finished an O win a moment ago; its storage event has not
+    // been delivered here yet, so this tab's in-memory stats do not know it.
+    const otherGame = {
+      ...result.current.history[0],
+      id: 'other-tab',
+      playedAt: '2026-11-21T10:00:00.000Z',
+      mode: 'classic',
+      opponent: 'human',
+      difficulty: null,
+      size: 3,
+      winLength: 3,
+      players: { X: 'A', O: 'B' },
+      result: 'O',
+      reason: 'line',
+      moveCount: 6,
+      durationMs: 1000,
+      moves: [0, 3, 1, 4, 8, 5],
+      rewound: false,
+      hinted: false,
+    };
+    window.localStorage.setItem('ttt-lab:history', JSON.stringify([otherGame]));
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 0, O: 1, draws: 0 }));
+
+    act(() => result.current.play(2)); // this tab's X win
+    expect((stored('history') as { id: string }[]).map((record) => record.id)).toEqual([
+      result.current.game.id,
+      'other-tab',
+    ]);
+    expect(stored('scoreboard')).toEqual({ X: 1, O: 1, draws: 0 });
   });
 
   it('ignores changes to unrelated keys', () => {

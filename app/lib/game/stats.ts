@@ -30,6 +30,8 @@ export const toMatchRecord = (game: GameState, now: number = Date.now()): MatchR
     durationMs: Math.max(0, now - game.startedAt),
     moves:
       game.moves.length <= MAX_STORED_MOVES ? game.moves.map((move) => move.index) : null,
+    rewound: game.assists.rewound,
+    hinted: game.assists.hinted,
   };
 };
 
@@ -70,7 +72,18 @@ export const recordMatch = (
 };
 
 export type Tally = { games: number; X: number; O: number; draws: number };
-export type DifficultyTally = { games: number; wins: number; losses: number; draws: number };
+
+export type DifficultyTally = {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  /** Games in which a move was taken back or a hint was shown. */
+  assisted: number;
+  /** Unassisted games and the human's wins among them — the win rate's basis. */
+  ownGames: number;
+  ownWins: number;
+};
 
 export type Summary = {
   games: number;
@@ -79,9 +92,15 @@ export type Summary = {
   vsComputer: Partial<Record<Difficulty, DifficultyTally>>;
   /** Mean number of moves of the finished games, or null without games. */
   averageMoves: number | null;
-  /** The longest run of consecutive human wins against the computer. */
+  /**
+   * The longest run of consecutive unassisted wins against the computer. A
+   * rewound or hinted game breaks the run: a loss that was rewound into a win
+   * is not a win of the player's own.
+   */
   bestStreak: number;
 };
+
+export const isAssisted = (record: MatchRecord): boolean => record.rewound || record.hinted;
 
 /**
  * Aggregates the stored history (newest first) into per-mode and per-level
@@ -106,15 +125,31 @@ export const summarize = (history: readonly MatchRecord[]): Summary => {
     byMode[record.mode] = tally;
 
     if (record.opponent === 'ai' && record.difficulty !== null) {
-      const level = vsComputer[record.difficulty] ?? { games: 0, wins: 0, losses: 0, draws: 0 };
+      const level = vsComputer[record.difficulty] ?? {
+        games: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        assisted: 0,
+        ownGames: 0,
+        ownWins: 0,
+      };
+      const won = record.result === HUMAN;
       level.games += 1;
       if (record.result === 'draw') level.draws += 1;
-      else if (record.result === HUMAN) level.wins += 1;
+      else if (won) level.wins += 1;
       else level.losses += 1;
-      vsComputer[record.difficulty] = level;
 
-      streak = record.result === HUMAN ? streak + 1 : 0;
+      if (isAssisted(record)) {
+        level.assisted += 1;
+        streak = 0;
+      } else {
+        level.ownGames += 1;
+        if (won) level.ownWins += 1;
+        streak = won ? streak + 1 : 0;
+      }
       bestStreak = Math.max(bestStreak, streak);
+      vsComputer[record.difficulty] = level;
     }
   }
 

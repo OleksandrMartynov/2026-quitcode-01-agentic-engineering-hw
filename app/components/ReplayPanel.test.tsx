@@ -26,6 +26,8 @@ const record: MatchRecord = {
   moveCount: 9,
   durationMs: 30_000,
   moves: [0, 3, 1, 4, 8, 6, 5, 7, 2],
+  rewound: false,
+  hinted: false,
 };
 
 const render = (ui: ReactElement) =>

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { newGame } from './__checks__/fixtures';
-import { applyMove, applyTimeout, createGame, doomedMarks, isOutOfTime, rewindTo } from './engine';
+import {
+  applyMove,
+  applyTimeout,
+  createGame,
+  doomedMarks,
+  isOutOfTime,
+  markHinted,
+  rewindTo,
+} from './engine';
 import type { GameState } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
@@ -128,6 +136,15 @@ describe('rewindTo', () => {
     expect(back.moves).toEqual(game.moves.slice(0, 3));
     expect(back.board).toEqual(playAll(newGame('vanishing'), [0, 3, 1]).board);
     expect(back.current).toBe('O');
+  });
+
+  it('marks the game as rewound and keeps a hint mark', () => {
+    const game = playAll(newGame('classic'), [0, 3, 1]);
+    expect(game.assists).toEqual({ rewound: false, hinted: false });
+    expect(rewindTo(game, 1).assists).toEqual({ rewound: true, hinted: false });
+    expect(rewindTo(markHinted(game), 1).assists).toEqual({ rewound: true, hinted: true });
+    // Assists survive later moves.
+    expect(applyMove(rewindTo(game, 1), 8).assists.rewound).toBe(true);
   });
 
   it('turns a finished game back into a game in progress', () => {

@@ -33,7 +33,7 @@ export const StatsPanel = ({ history }: Props) => {
   const tiles = [
     { label: 'Games stored', value: String(summary.games) },
     { label: 'Average moves', value: summary.averageMoves === null ? '—' : summary.averageMoves.toFixed(1) },
-    { label: 'Best win streak vs computer', value: String(summary.bestStreak) },
+    { label: 'Best win streak vs computer, no help', value: String(summary.bestStreak) },
   ];
 
   return (
@@ -42,7 +42,8 @@ export const StatsPanel = ({ history }: Props) => {
         Statistics
       </PHeading>
       <PText size="xs" color="contrast-medium">
-        Derived from the games stored in this browser.
+        Derived from the games stored in this browser. Games with a rewind or a hint
+        count as played “with help” and are left out of the win rate and the streak.
       </PText>
 
       <div className="scoreboard">
@@ -93,7 +94,8 @@ export const StatsPanel = ({ history }: Props) => {
               <PTableHeadCell>Won</PTableHeadCell>
               <PTableHeadCell>Lost</PTableHeadCell>
               <PTableHeadCell>Drawn</PTableHeadCell>
-              <PTableHeadCell>Win rate</PTableHeadCell>
+              <PTableHeadCell>With help</PTableHeadCell>
+              <PTableHeadCell>Win rate, no help</PTableHeadCell>
             </PTableHeadRow>
           </PTableHead>
           <PTableBody>
@@ -106,7 +108,8 @@ export const StatsPanel = ({ history }: Props) => {
                   <PTableCell>{String(tally.wins)}</PTableCell>
                   <PTableCell>{String(tally.losses)}</PTableCell>
                   <PTableCell>{String(tally.draws)}</PTableCell>
-                  <PTableCell>{percent(tally.wins, tally.games)}</PTableCell>
+                  <PTableCell>{String(tally.assisted)}</PTableCell>
+                  <PTableCell>{percent(tally.ownWins, tally.ownGames)}</PTableCell>
                 </PTableRow>
               );
             })}

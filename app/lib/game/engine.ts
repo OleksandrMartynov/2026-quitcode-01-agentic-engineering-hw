@@ -20,6 +20,7 @@ export const createGame = (rawSettings: Settings): GameState => {
     lines: buildLines(settings.size, settings.winLength),
     startedAt: Date.now(),
     turnStartedAt: Date.now(),
+    assists: { rewound: false, hinted: false },
   };
 };
 
@@ -92,14 +93,22 @@ export const applyTimeout = (state: GameState): GameState => {
   return { ...state, outcome: { type: 'timeout', winner: otherPlayer(state.current) } };
 };
 
-/** Replays the first `moveCount` moves into a fresh game — used for time travel. */
-export const rewindTo = (state: GameState, moveCount: number): GameState => {
-  const replayed = state.moves.slice(0, moveCount).reduce<GameState>(
-    (game, move) => applyMove(game, move.index),
-    { ...createGame(state.settings), id: state.id, startedAt: state.startedAt }
-  );
-  return replayed;
-};
+/**
+ * Replays the first `moveCount` moves into a fresh game — used for time
+ * travel. The game keeps its identity and is marked as rewound, so its result
+ * is not counted as unassisted play.
+ */
+export const rewindTo = (state: GameState, moveCount: number): GameState =>
+  state.moves.slice(0, moveCount).reduce<GameState>((game, move) => applyMove(game, move.index), {
+    ...createGame(state.settings),
+    id: state.id,
+    startedAt: state.startedAt,
+    assists: { ...state.assists, rewound: true },
+  });
+
+/** Marks that a hint was shown in this game. */
+export const markHinted = (state: GameState): GameState =>
+  state.assists.hinted ? state : { ...state, assists: { ...state.assists, hinted: true } };
 
 /**
  * Marks that will vanish on their owner's next move, for the board hint. A

@@ -18,6 +18,13 @@ import { StatusBar } from './StatusBar';
 import { useGame } from '@/lib/useGame';
 import { MODES } from '@/lib/game/types';
 
+/**
+ * The commit this page was built from, inlined at build time (CI sets it for
+ * the GitHub Pages export), so anyone can check that a published demo matches
+ * the code.
+ */
+const BUILD_SHA = process.env.NEXT_PUBLIC_BUILD_SHA || 'dev';
+
 export const GameShell = () => {
   const {
     settings,
@@ -51,6 +58,9 @@ export const GameShell = () => {
           </PHeading>
           <PText color="contrast-medium">
             Four game modes and a minimax opponent, built on the Porsche Design System.
+          </PText>
+          <PText size="xs" color="contrast-medium">
+            {`Build ${BUILD_SHA}`}
           </PText>
         </div>
       </header>

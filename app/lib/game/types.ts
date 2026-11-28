@@ -61,7 +61,15 @@ export type GameState = {
   /** Every winning line for this board geometry, precomputed once per game. */
   lines: number[][];
   startedAt: number;
+  /**
+   * Help the players had in this game: a move taken back (rewind) or a hint
+   * from the hard AI. Recorded with the match so statistics can tell the
+   * player's own results from assisted ones.
+   */
+  assists: Assists;
 };
+
+export type Assists = { rewound: boolean; hinted: boolean };
 
 export type MatchRecord = {
   id: string;
@@ -83,6 +91,10 @@ export type MatchRecord = {
    * Vanishing games (see MAX_STORED_MOVES).
    */
   moves: number[] | null;
+  /** Whether a move was taken back during the game. */
+  rewound: boolean;
+  /** Whether a hint was shown during the game. */
+  hinted: boolean;
 };
 
 export type Scoreboard = { X: number; O: number; draws: number };

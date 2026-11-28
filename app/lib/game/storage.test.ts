@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HISTORY_LIMIT,
   announceClear,
+  updateStoredStats,
   loadHistory,
   loadScoreboard,
   loadSettings,
@@ -29,6 +30,8 @@ const validRecord = (patch: Partial<MatchRecord> = {}): MatchRecord => ({
   durationMs: 12_000,
   // X: 0, 1, 6, 2 / O: 3, 4, 8 — X completes the top row on move 7.
   moves: [0, 3, 1, 4, 6, 8, 2],
+  rewound: false,
+  hinted: false,
   ...patch,
 });
 
@@ -124,6 +127,17 @@ describe('parseRecord', () => {
     expect(parseRecord(vanishing)).toEqual(vanishing);
   });
 
+  it('reads legacy records without assist flags as unassisted, and keeps real flags', () => {
+    const legacy: Record<string, unknown> = { ...validRecord() };
+    delete legacy.rewound;
+    delete legacy.hinted;
+    expect(parseRecord(legacy)).toMatchObject({ rewound: false, hinted: false });
+    expect(parseRecord({ ...validRecord(), rewound: true, hinted: 'yes' })).toMatchObject({
+      rewound: true,
+      hinted: false,
+    });
+  });
+
   it('drops a stray difficulty on a two-player game', () => {
     expect(parseRecord(validRecord({ opponent: 'human', difficulty: 'hard' }))?.difficulty).toBeNull();
   });
@@ -199,6 +213,50 @@ describe('parseSettings', () => {
       size: 3,
       winLength: 3,
     });
+  });
+});
+
+describe('updateStoredStats', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('applies the change to what is in storage now, stores and reports it', () => {
+    window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 2, O: 0, draws: 0 }));
+    const done = vi.fn();
+    updateStoredStats(
+      (current) => ({ ...current, scoreboard: { ...current.scoreboard, O: current.scoreboard.O + 1 } }),
+      done
+    );
+    expect(loadScoreboard()).toEqual({ X: 2, O: 1, draws: 0 });
+    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 2, O: 1, draws: 0 } });
+  });
+
+  it('runs every update under one Web Lock, one after the other', async () => {
+    // A minimal Web Locks stand-in: requests for the same name run in order.
+    let queue = Promise.resolve();
+    const names: string[] = [];
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: (name: string, callback: () => void) => {
+          names.push(name);
+          queue = queue.then(callback);
+          return queue;
+        },
+      },
+    });
+    const bump = (key: 'X' | 'O') =>
+      updateStoredStats(
+        (current) => ({ ...current, scoreboard: { ...current.scoreboard, [key]: current.scoreboard[key] + 1 } }),
+        () => {}
+      );
+
+    // Two "tabs" ask at once; neither update may be lost.
+    bump('X');
+    bump('O');
+    expect(loadScoreboard()).toEqual({ X: 0, O: 0, draws: 0 }); // queued, not yet run
+    await queue;
+
+    expect(names).toEqual(['ttt-lab:stats', 'ttt-lab:stats']);
+    expect(loadScoreboard()).toEqual({ X: 1, O: 1, draws: 0 });
   });
 });
 

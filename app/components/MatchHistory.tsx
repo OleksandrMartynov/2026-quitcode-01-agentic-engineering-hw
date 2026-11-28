@@ -32,6 +32,10 @@ const RESULT_VARIANT = {
 const formatTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+/** What helped the player in this game, or an em dash for none. */
+export const helpLabel = (record: MatchRecord): string =>
+  [record.rewound ? 'Rewind' : null, record.hinted ? 'Hint' : null].filter(Boolean).join(', ') || '—';
+
 const formatDuration = (ms: number): string => {
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -80,6 +84,7 @@ export const MatchHistory = ({ history, onClear, onReplay }: Props) => {
               <PTableHeadCell>Result</PTableHeadCell>
               <PTableHeadCell>Moves</PTableHeadCell>
               <PTableHeadCell>Length</PTableHeadCell>
+              <PTableHeadCell>Help</PTableHeadCell>
               <PTableHeadCell>Replay</PTableHeadCell>
             </PTableHeadRow>
           </PTableHead>
@@ -98,6 +103,7 @@ export const MatchHistory = ({ history, onClear, onReplay }: Props) => {
                 </PTableCell>
                 <PTableCell>{String(record.moveCount)}</PTableCell>
                 <PTableCell>{formatDuration(record.durationMs)}</PTableCell>
+                <PTableCell>{helpLabel(record)}</PTableCell>
                 <PTableCell>
                   <PButtonPure
                     type="button"

@@ -2,15 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { chooseMove, suggestMove } from './game/ai';
-import { applyMove, applyTimeout, createGame, isOutOfTime, rewindTo } from './game/engine';
+import { applyMove, applyTimeout, createGame, isOutOfTime, markHinted, rewindTo } from './game/engine';
 import { EMPTY_STATS, recordMatch, toMatchRecord } from './game/stats';
 import type { MatchStats } from './game/stats';
 import {
-  loadHistory,
-  loadScoreboard,
+  loadStats,
   loadSettings,
-  saveHistory,
-  saveScoreboard,
+  updateStoredStats,
   announceClear,
   saveSettings,
   STORAGE_KEYS,
@@ -38,8 +36,6 @@ export const useGame = () => {
    * score still contains it.
    */
   const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
-  /** The last stats taken over from another tab — never persisted from here. */
-  const adoptedRef = useRef<MatchStats | null>(null);
   /**
    * A hint belongs to the exact position it was computed for. Keying it by the
    * game object (every move, rewind or restart creates a new one) makes a
@@ -57,7 +53,9 @@ export const useGame = () => {
     const stored = loadSettings();
     setSettings(stored);
     setGame(createGame(stored));
-    setStats({ history: loadHistory(), scoreboard: loadScoreboard() });
+    // Reading through updateStoredStats also writes the validated values back,
+    // which heals corrupted entries for every tab.
+    updateStoredStats((current) => current, setStats);
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -68,18 +66,10 @@ export const useGame = () => {
     if (hydrated) saveSettings(settings);
   }, [settings, hydrated]);
 
-  // A tab stores only its OWN changes. Stats adopted from another tab are
-  // already in storage — and may be a stale mix read while that tab was still
-  // writing — so writing them back could resurrect data the other tab has
-  // just replaced (e.g. the old score after a clear).
-  useEffect(() => {
-    if (!hydrated || stats === adoptedRef.current) return;
-    saveHistory(stats.history);
-    saveScoreboard(stats.scoreboard);
-  }, [stats, hydrated]);
-
-  // Another tab finished a game or cleared the history: adopt its stats, so
-  // this tab's next write extends them instead of overwriting them.
+  // Another tab finished a game or cleared the history: show its stats. They
+  // are only displayed, never written back — every change this tab makes goes
+  // through updateStoredStats, which re-reads storage under a lock — so a
+  // stale mix read while the other tab was mid-write cannot overwrite anything.
   useEffect(() => {
     if (!hydrated) return;
     const watched: string[] = [STORAGE_KEYS.history, STORAGE_KEYS.scoreboard, STORAGE_KEYS.clearedAt];
@@ -92,9 +82,7 @@ export const useGame = () => {
       if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
         countedRef.current = null;
       }
-      const adopted = { history: loadHistory(), scoreboard: loadScoreboard() };
-      adoptedRef.current = adopted;
-      setStats(adopted);
+      setStats(loadStats());
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -131,14 +119,15 @@ export const useGame = () => {
     // A cleared score holds nothing that a replayed game could take back —
     // here, and in every other open tab.
     countedRef.current = null;
-    // Order matters across tabs: the empty stats are stored synchronously
-    // BEFORE the signal, so a tab reacting to it already reads the cleared
-    // state and cannot write the old one back. (The persistence effect then
-    // finds identical values and skips its write.)
-    saveHistory(EMPTY_STATS.history);
-    saveScoreboard(EMPTY_STATS.scoreboard);
-    announceClear();
-    setStats(EMPTY_STATS);
+    // Order matters across tabs: the empty stats are stored BEFORE the signal,
+    // so a tab reacting to it can only read the cleared state.
+    updateStoredStats(
+      () => EMPTY_STATS,
+      (cleared) => {
+        announceClear();
+        setStats(cleared);
+      }
+    );
   }, []);
 
   const aiTurn =
@@ -150,7 +139,13 @@ export const useGame = () => {
   const requestHint = useCallback(() => {
     if (!canHint) return;
     const cell = suggestMove(game);
-    if (cell >= 0) setHint({ position: game, cell });
+    if (cell < 0) return;
+    // The hint is recorded with the game, so a hinted win is not counted as
+    // the player's own. Marking creates a new position object, and the hint
+    // is keyed to exactly that object.
+    const hinted = markHinted(game);
+    setGame(hinted);
+    setHint({ position: hinted, cell });
   }, [canHint, game]);
 
   // Every timer below captures the position it was started for; the updater
@@ -216,7 +211,9 @@ export const useGame = () => {
     const record = toMatchRecord(game);
     const counted = countedRef.current?.id === game.id ? countedRef.current.result : null;
     countedRef.current = { id: game.id, result: record.result };
-    setStats((previous) => recordMatch(previous, record, counted));
+    // Applied to storage as it is now, not to this tab's copy: a game another
+    // tab finished meanwhile is kept even if its storage event has not arrived.
+    updateStoredStats((current) => recordMatch(current, record, counted), setStats);
   }, [game, hydrated]);
 
   return {
