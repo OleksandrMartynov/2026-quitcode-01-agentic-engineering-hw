@@ -52,17 +52,18 @@ const adjust = (scoreboard: Scoreboard, result: MatchRecord['result'], delta: 1 
  * the history — evicted by HISTORY_LIMIT after games finished in another tab —
  * but its result is still part of the score.
  */
-export const recordMatch = (
-  stats: MatchStats,
+export const recordMatch = <S extends MatchStats>(
+  stats: S,
   record: MatchRecord,
   alreadyCounted: MatchRecord['result'] | null = null
-): MatchStats => {
+): S => {
   const previous =
     stats.history.find((entry) => entry.id === record.id)?.result ?? alreadyCounted;
   const withoutPrevious =
     previous === null ? stats.scoreboard : adjust(stats.scoreboard, previous, -1);
 
   return {
+    ...stats,
     history: [record, ...stats.history.filter((entry) => entry.id !== record.id)].slice(
       0,
       HISTORY_LIMIT

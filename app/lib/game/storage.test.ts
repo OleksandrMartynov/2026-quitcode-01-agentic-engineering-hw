@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HISTORY_LIMIT,
-  announceClear,
+  applyPending,
   loadStats,
   updateStoredStats,
   loadHistory,
@@ -229,7 +229,10 @@ describe('updateStoredStats', () => {
       done
     );
     expect(loadScoreboard()).toEqual({ X: 2, O: 1, draws: 0 });
-    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 2, O: 1, draws: 0 } }, true);
+    expect(done).toHaveBeenCalledWith(
+      { history: [], scoreboard: { X: 2, O: 1, draws: 0 }, generation: 'g0' },
+      []
+    );
   });
 
   it('reports a failed write and re-applies pending changes to fresh storage', () => {
@@ -244,11 +247,47 @@ describe('updateStoredStats', () => {
     const done = vi.fn();
     try {
       // One earlier change is still pending, plus the new one.
-      updateStoredStats(bumpX, done, () => [bumpX]);
+      updateStoredStats(bumpX, done, () => [{ change: bumpX, generation: 'g0' }]);
     } finally {
       spy.mockRestore();
     }
-    expect(done).toHaveBeenCalledWith({ history: [], scoreboard: { X: 5, O: 0, draws: 0 } }, false);
+    const [stats, pendingAfter] = done.mock.calls[0];
+    expect(stats).toEqual({ history: [], scoreboard: { X: 5, O: 0, draws: 0 }, generation: 'g0' });
+    // Both changes stay pending for the next attempt.
+    expect(pendingAfter).toHaveLength(2);
+  });
+
+  it('drops pending changes made before a clear, whenever the clear is noticed', () => {
+    // Storage holds a newer generation: another tab cleared since.
+    window.localStorage.setItem(
+      'ttt-lab:stats',
+      JSON.stringify({ history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g-after-clear' })
+    );
+    const bumpX = (current: StoredStats): StoredStats => ({
+      ...current,
+      scoreboard: { ...current.scoreboard, X: current.scoreboard.X + 1 },
+    });
+    const done = vi.fn();
+    updateStoredStats((current) => current, done, () => [{ change: bumpX, generation: 'g0' }]);
+    expect(done).toHaveBeenCalledWith(
+      { history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g-after-clear' },
+      []
+    );
+    expect(applyPending(loadStats(), [{ change: bumpX, generation: 'g0' }]).scoreboard.X).toBe(0);
+
+    // If the save fails, the stale change is not kept queued either.
+    const failing = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    const afterFailure = vi.fn();
+    try {
+      updateStoredStats(bumpX, afterFailure, () => [{ change: bumpX, generation: 'g0' }]);
+    } finally {
+      failing.mockRestore();
+    }
+    const [, pendingAfter] = afterFailure.mock.calls[0];
+    expect(pendingAfter).toEqual([{ change: bumpX, generation: 'g-after-clear' }]);
+    expect(applyPending(loadStats(), [{ change: bumpX, generation: 'g-after-clear' }]).scoreboard.X).toBe(1);
   });
 
   it('stores history and score in one write, so a failure leaves both untouched', () => {
@@ -259,16 +298,22 @@ describe('updateStoredStats', () => {
     });
     const done = vi.fn();
     try {
-      updateStoredStats(() => ({ history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }), done);
+      updateStoredStats(
+        (current) => ({ ...current, history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }),
+        done
+      );
     } finally {
       setItem.mockRestore();
     }
-    expect(done).toHaveBeenCalledWith(expect.anything(), false);
+    expect(done.mock.calls[0][1]).toHaveLength(1); // not stored: still pending
     // There is no second key that could hold half of the change.
     expect(window.localStorage.getItem('ttt-lab:stats')).toBe(before);
 
     const writes = vi.spyOn(Storage.prototype, 'setItem');
-    updateStoredStats(() => ({ history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }), () => {});
+    updateStoredStats(
+      (current) => ({ ...current, history: [validRecord()], scoreboard: { X: 1, O: 0, draws: 0 } }),
+      () => {}
+    );
     expect(writes.mock.calls.map(([key]) => key)).toEqual(['ttt-lab:stats']);
     writes.mockRestore();
   });
@@ -276,12 +321,17 @@ describe('updateStoredStats', () => {
   it('migrates history and score from the two legacy keys on the first save', () => {
     window.localStorage.setItem('ttt-lab:history', JSON.stringify([validRecord()]));
     window.localStorage.setItem('ttt-lab:scoreboard', JSON.stringify({ X: 4, O: 2, draws: 1 }));
-    expect(loadStats()).toEqual({ history: [validRecord()], scoreboard: { X: 4, O: 2, draws: 1 } });
+    expect(loadStats()).toEqual({
+      history: [validRecord()],
+      scoreboard: { X: 4, O: 2, draws: 1 },
+      generation: 'g0',
+    });
 
     updateStoredStats((current) => current, () => {});
     expect(JSON.parse(window.localStorage.getItem('ttt-lab:stats')!)).toEqual({
       history: [validRecord()],
       scoreboard: { X: 4, O: 2, draws: 1 },
+      generation: 'g0',
     });
     expect(window.localStorage.getItem('ttt-lab:history')).toBeNull();
     expect(window.localStorage.getItem('ttt-lab:scoreboard')).toBeNull();
@@ -314,17 +364,6 @@ describe('updateStoredStats', () => {
 
     expect(names).toEqual(['ttt-lab:stats', 'ttt-lab:stats']);
     expect(loadScoreboard()).toEqual({ X: 1, O: 1, draws: 0 });
-  });
-});
-
-describe('announceClear', () => {
-  it('writes a new value on every clear, so each one fires a storage event', () => {
-    announceClear();
-    const first = window.localStorage.getItem('ttt-lab:cleared-at');
-    announceClear();
-    const second = window.localStorage.getItem('ttt-lab:cleared-at');
-    expect(first).not.toBeNull();
-    expect(second).not.toBe(first);
   });
 });
 

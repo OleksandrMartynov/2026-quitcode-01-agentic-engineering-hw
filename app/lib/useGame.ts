@@ -6,14 +6,15 @@ import { applyMove, applyTimeout, createGame, isOutOfTime, markHinted, rewindTo 
 import { EMPTY_STATS, recordMatch, toMatchRecord } from './game/stats';
 import type { MatchStats } from './game/stats';
 import {
+  applyPending,
   loadStats,
   loadSettings,
+  newGeneration,
   updateStoredStats,
-  announceClear,
   saveSettings,
   STORAGE_KEYS,
 } from './game/storage';
-import type { StatsChange } from './game/storage';
+import type { PendingChange, StatsChange, StoredStats } from './game/storage';
 import { AI, DEFAULT_SETTINGS, MODES, finalizeSettings } from './game/types';
 import type { GameState, MatchRecord, Settings } from './game/types';
 
@@ -32,25 +33,29 @@ export const useGame = () => {
   /** The finished game object that was last written to the stats. */
   const recordedRef = useRef<GameState | null>(null);
   /**
-   * The result the current game last added to the score. Kept apart from the
-   * history, which can lose the record (HISTORY_LIMIT, other tabs) while the
-   * score still contains it.
+   * The result the current game last added to the score, and the generation
+   * of the stats it was added to. Kept apart from the history, which can lose
+   * the record (HISTORY_LIMIT, other tabs) while the score still contains it.
+   * After a clear — a new generation — there is nothing left to take back.
    */
-  const countedRef = useRef<{ id: string; result: MatchRecord['result'] } | null>(null);
+  const countedRef = useRef<{
+    id: string;
+    result: MatchRecord['result'];
+    generation: string;
+  } | null>(null);
   /**
-   * Changes this tab could not store (storage full or blocked). Each update
-   * re-applies them to the fresh stats first, so the session keeps every game
-   * and nothing another tab stored meanwhile is overwritten.
+   * Changes this tab could not store (storage full or blocked), each with the
+   * generation it was made in; see updateStoredStats.
    */
-  const pendingRef = useRef<StatsChange[]>([]);
+  const pendingRef = useRef<PendingChange[]>([]);
 
   /** Every change to history and score goes through here; see updateStoredStats. */
   const commitStats = useCallback(
-    (change: StatsChange, after?: (stats: MatchStats) => void) =>
+    (change: StatsChange, after?: (stats: StoredStats) => void) =>
       updateStoredStats(
         change,
-        (next, saved) => {
-          pendingRef.current = saved ? [] : [...pendingRef.current, change];
+        (next, pendingAfter) => {
+          pendingRef.current = pendingAfter;
           after?.(next);
           setStats(next);
         },
@@ -88,29 +93,18 @@ export const useGame = () => {
     if (hydrated) saveSettings(settings);
   }, [settings, hydrated]);
 
-  // Another tab finished a game or cleared the history: show its stats. They
-  // are only displayed, never written back — every change this tab makes goes
-  // through updateStoredStats, which re-reads storage under a lock — so a
-  // stale mix read while the other tab was mid-write cannot overwrite anything.
+  // Another tab finished a game or cleared the history: show its stats. The
+  // event only refreshes the view — it never decides anything. Whether a clear
+  // happened is read from the generation under the lock when this tab next
+  // changes the stats, so a late or missing event cannot change the outcome,
+  // and adopted stats are never written back.
   useEffect(() => {
     if (!hydrated) return;
-    const watched: string[] = [STORAGE_KEYS.stats, STORAGE_KEYS.clearedAt];
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && !watched.includes(event.key)) return;
-      // Only an explicit clear (its own key, or localStorage.clear() with
-      // key === null) takes this game's result out of the score. Whatever the
-      // history holds — even [] written back after repairing corrupted data —
-      // never does, so the remembered result is reset on the signal alone.
-      if (event.key === null || event.key === STORAGE_KEYS.clearedAt) {
-        countedRef.current = null;
-        // A clear also discards this tab's unsaved changes: they were made
-        // before it and would otherwise bring cleared games back. Changes made
-        // after the clear are queued from here on as usual.
-        pendingRef.current = [];
-      }
-      // The view is what storage holds plus this tab's unsaved changes, so
-      // games that could not be stored do not vanish from the screen.
-      setStats(pendingRef.current.reduce((stats, apply) => apply(stats), loadStats()));
+      if (event.key !== null && event.key !== STORAGE_KEYS.stats) return;
+      // Storage plus this tab's unsaved changes that still apply, so games
+      // that could not be stored do not vanish from the screen.
+      setStats(applyPending(loadStats(), pendingRef.current));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -143,15 +137,12 @@ export const useGame = () => {
     []
   );
 
+  // A clear starts a new generation in the same atomic write as the empty
+  // stats: every tab then sees that results counted, and changes left unsaved,
+  // before it belong to an older generation and no longer apply.
   const clearHistory = useCallback(() => {
-    // A cleared score holds nothing that a replayed game could take back —
-    // here, and in every other open tab.
     countedRef.current = null;
-    // Unsaved changes predate the clear; it wipes them along with the rest.
-    pendingRef.current = [];
-    // Order matters across tabs: the empty stats are stored BEFORE the signal,
-    // so a tab reacting to it can only read the cleared state.
-    commitStats(() => EMPTY_STATS, announceClear);
+    commitStats(() => ({ ...EMPTY_STATS, generation: newGeneration() }));
   }, [commitStats]);
 
   const aiTurn =
@@ -233,11 +224,22 @@ export const useGame = () => {
     recordedRef.current = game;
 
     const record = toMatchRecord(game);
-    const counted = countedRef.current?.id === game.id ? countedRef.current.result : null;
-    countedRef.current = { id: game.id, result: record.result };
+    const counted = countedRef.current?.id === game.id ? countedRef.current : null;
     // Applied to storage as it is now, not to this tab's copy: a game another
     // tab finished meanwhile is kept even if its storage event has not arrived.
-    commitStats((current) => recordMatch(current, record, counted));
+    // The earlier result is only taken back if it was counted in the
+    // generation that is in storage now, i.e. no clear happened since.
+    commitStats(
+      (current) =>
+        recordMatch(
+          current,
+          record,
+          counted !== null && counted.generation === current.generation ? counted.result : null
+        ),
+      (next) => {
+        countedRef.current = { id: game.id, result: record.result, generation: next.generation };
+      }
+    );
   }, [game, hydrated, commitStats]);
 
   return {

@@ -13,13 +13,11 @@ import type { MatchRecord, Player, Scoreboard, Settings } from './types';
 export const STORAGE_KEYS = {
   settings: 'ttt-lab:settings',
   /**
-   * History and score in ONE value, so a single setItem stores both or
-   * neither — there is no half-written state (a game in the history but not
-   * in the score) for a retry to count twice.
+   * History, score and the clear generation in ONE value, so a single
+   * setItem stores all of them or none — there is no half-written state (a
+   * game in the history but not in the score) for a retry to count twice.
    */
   stats: 'ttt-lab:stats',
-  /** Bumped on every "Clear history": the explicit cross-tab clear signal. */
-  clearedAt: 'ttt-lab:cleared-at',
   /** Before `stats`: history and score in separate keys. Read once to migrate. */
   legacyHistory: 'ttt-lab:history',
   legacyScoreboard: 'ttt-lab:scoreboard',
@@ -215,20 +213,28 @@ const write = (key: string, value: unknown): boolean => {
 };
 
 /**
- * Announces a clear to the other tabs. A clear cannot be inferred from the
- * history's content — corrupted data repaired to `[]` by another tab looks
- * exactly like a cleared history — so it gets a key of its own. The value is
- * unique per clear, so two clears in a row still fire two storage events.
+ * History and score, plus the generation they belong to. Every clear starts a
+ * new generation in the same atomic write; a change remembered from an older
+ * generation was made before that clear and no longer applies.
  */
-export const announceClear = (): void => {
-  write(KEYS.clearedAt, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-};
+export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard; generation: string };
 
-export type StoredStats = { history: MatchRecord[]; scoreboard: Scoreboard };
+/** Generation of stats that have never been cleared (and of migrated data). */
+export const FIRST_GENERATION = 'g0';
+
+export const newGeneration = (): string =>
+  `g${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const parseStats = (raw: unknown): StoredStats => {
   const stored = isObject(raw) ? raw : {};
-  return { history: parseHistory(stored.history), scoreboard: parseScoreboard(stored.scoreboard) };
+  return {
+    history: parseHistory(stored.history),
+    scoreboard: parseScoreboard(stored.scoreboard),
+    generation:
+      typeof stored.generation === 'string' && stored.generation !== ''
+        ? stored.generation
+        : FIRST_GENERATION,
+  };
 };
 
 /**
@@ -242,14 +248,16 @@ export const loadStats = (): StoredStats => {
   return {
     history: parseHistory(read(KEYS.legacyHistory)),
     scoreboard: parseScoreboard(read(KEYS.legacyScoreboard)),
+    generation: FIRST_GENERATION,
   };
 };
 
-/** One atomic write of history and score; true if they are now in storage. */
+/** One atomic write of history, score and generation; true if it is stored. */
 const saveStats = (stats: StoredStats): boolean => {
   const saved = write(KEYS.stats, {
     history: stats.history.slice(0, HISTORY_LIMIT),
     scoreboard: stats.scoreboard,
+    generation: stats.generation,
   });
   if (saved) {
     // Migrated: the legacy keys are no longer read, so drop them.
@@ -268,32 +276,48 @@ export const STATS_LOCK = 'ttt-lab:stats';
 
 export type StatsChange = (stats: StoredStats) => StoredStats;
 
+/** A change that could not be stored, with the generation it was made in. */
+export type PendingChange = { change: StatsChange; generation: string };
+
+/** Applies the pending changes that still belong to the generation of `stats`. */
+export const applyPending = (stats: StoredStats, pending: readonly PendingChange[]): StoredStats =>
+  pending
+    .filter((entry) => entry.generation === stats.generation)
+    .reduce((current, entry) => entry.change(current), stats);
+
 /**
  * The only way the app changes the stored history and score: `change` is
  * applied to the stats as they are in storage at that moment — never to a
  * copy held in memory, which another tab may have outdated — and the result
- * is stored and handed to `done`, together with whether storing worked.
+ * is stored.
  *
  * Where the Web Locks API exists, the read–modify–write runs under one lock
  * shared by all tabs, so two tabs finishing a game at the same time are
  * applied one after the other instead of the later write winning. Without it
  * (old browsers, tests) the update runs synchronously in a single task.
  *
- * When storage refuses writes (quota, blocked), the caller keeps the changes
- * that were not stored and passes them as `pending`. They are re-applied, in
- * order, to the fresh stats before `change` — so the session keeps every game
- * it played, and once storage works again those games land on top of whatever
- * other tabs stored meanwhile instead of overwriting it. Because the save is
- * all-or-nothing, a pending change is never applied twice.
+ * When storage refuses writes (quota, blocked), the changes that were not
+ * stored are kept as `pending`, each with the generation it was made in. Every
+ * update re-applies, in order, those that still belong to the generation now
+ * in storage — so the session keeps every game it played, games land on top
+ * of whatever other tabs stored meanwhile, and a change made before a clear is
+ * dropped. The generation is read under the lock from the same atomic value,
+ * so this does not depend on when (or whether) a storage event arrives.
+ *
+ * `done` receives the resulting stats and the pending list to keep: empty
+ * after a successful save.
  */
 export const updateStoredStats = (
   change: StatsChange,
-  done: (stats: StoredStats, saved: boolean) => void,
-  pending: () => readonly StatsChange[] = () => []
+  done: (stats: StoredStats, pendingAfter: PendingChange[]) => void,
+  pending: () => readonly PendingChange[] = () => []
 ): void => {
   const run = () => {
-    const next = [...pending(), change].reduce((stats, apply) => apply(stats), loadStats());
-    done(next, saveStats(next));
+    const base = loadStats();
+    const kept = pending().filter((entry) => entry.generation === base.generation);
+    const next = change(applyPending(base, kept));
+    const saved = saveStats(next);
+    done(next, saved ? [] : [...kept, { change, generation: base.generation }]);
   };
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
   if (locks && typeof locks.request === 'function') {

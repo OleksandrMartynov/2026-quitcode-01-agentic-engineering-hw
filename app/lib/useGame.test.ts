@@ -24,9 +24,10 @@ const stored = (key: string): unknown => {
 };
 
 /** What another tab writes: the combined value, merged with what is stored. */
-const writeStats = (patch: { history?: unknown; scoreboard?: unknown }): string => {
+const writeStats = (patch: { history?: unknown; scoreboard?: unknown; generation?: string }): string => {
   const raw = window.localStorage.getItem(STATS);
-  const current = raw === null ? { history: [], scoreboard: { X: 0, O: 0, draws: 0 } } : JSON.parse(raw);
+  const current =
+    raw === null ? { history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g0' } : JSON.parse(raw);
   const newValue = JSON.stringify({ ...current, ...patch });
   window.localStorage.setItem(STATS, newValue);
   return newValue;
@@ -350,17 +351,14 @@ describe('two open tabs', () => {
     const won = result.current.history[0];
 
     // Another tab clears everything...
-    const sendStats = (patch: { history?: unknown; scoreboard?: unknown }) => {
+    const sendStats = (patch: { history?: unknown; scoreboard?: unknown; generation?: string }) => {
       const newValue = writeStats(patch);
       act(() => {
         window.dispatchEvent(statsEvent(newValue));
       });
     };
-    sendStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
-    window.localStorage.setItem('ttt-lab:cleared-at', 'clear-1');
-    act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:cleared-at', newValue: 'clear-1' }));
-    });
+    // A clear is one write: empty stats in a new generation.
+    sendStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g-cleared' });
     // ...and then records an X win of its own.
     sendStats({ history: [{ ...won, id: 'other-tab-game' }], scoreboard: { X: 1, O: 0, draws: 0 } });
     expect(result.current.scoreboard).toEqual({ X: 1, O: 0, draws: 0 });
@@ -409,31 +407,24 @@ describe('two open tabs', () => {
     expect(result.current.scoreboard).toEqual({ X: 0, O: 1, draws: 0 });
   });
 
-  it('announces its own clear only after the cleared stats are stored', () => {
+  it('clears with one atomic write that starts a new generation', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));
     for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell));
+    const before = (JSON.parse(window.localStorage.getItem(STATS)!) as { generation: string }).generation;
 
-    // What another tab would read at the moment the signal lands.
-    let seenBySignal: unknown = null;
-    const setItem = Storage.prototype.setItem;
-    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
-      this: Storage,
-      key: string,
-      value: string
-    ) {
-      setItem.call(this, key, value);
-      if (key === 'ttt-lab:cleared-at') {
-        seenBySignal = { history: stored('history'), scoreboard: stored('scoreboard') };
-      }
-    });
+    const writes = vi.spyOn(Storage.prototype, 'setItem');
     try {
       act(() => result.current.clearHistory());
+      // Empty stats and the new generation land together: no other tab can
+      // read one without the other.
+      expect(writes.mock.calls.map(([key]) => key)).toEqual([STATS]);
     } finally {
-      spy.mockRestore();
+      writes.mockRestore();
     }
-
-    expect(seenBySignal).toEqual({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
+    const after = JSON.parse(window.localStorage.getItem(STATS)!) as { history: unknown[]; generation: string };
+    expect(after.history).toEqual([]);
+    expect(after.generation).not.toBe(before);
   });
 
   it('never writes back stats it adopted from another tab', () => {
@@ -538,6 +529,29 @@ describe('blocked storage', () => {
 });
 
 describe('storage that recovers', () => {
+  it('does not bring back a cleared game even if the clear event never arrives', () => {
+    const { result } = mount();
+    act(() => result.current.startGame(twoPlayers));
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    try {
+      for (const cell of [0, 3, 1, 4, 2]) act(() => result.current.play(cell)); // X wins, unsaved
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Another tab clears; its storage event is delayed and has not arrived.
+    writeStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g-cleared' });
+
+    // This tab finishes a new game before hearing about the clear.
+    act(() => result.current.restart());
+    for (const cell of [0, 3, 1, 4, 8, 5]) act(() => result.current.play(cell)); // O wins
+
+    expect((stored('history') as { result: string }[]).map((record) => record.result)).toEqual(['O']);
+    expect(stored('scoreboard')).toEqual({ X: 0, O: 1, draws: 0 });
+  });
+
   it('drops unsaved games that another tab cleared, and keeps games played after', () => {
     const { result } = mount();
     act(() => result.current.startGame(twoPlayers));
@@ -551,10 +565,9 @@ describe('storage that recovers', () => {
     }
 
     // Another tab clears the history: everything before the clear is gone.
-    writeStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 } });
-    window.localStorage.setItem('ttt-lab:cleared-at', 'clear-1');
+    const newValue = writeStats({ history: [], scoreboard: { X: 0, O: 0, draws: 0 }, generation: 'g-cleared' });
     act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: 'ttt-lab:cleared-at', newValue: 'clear-1' }));
+      window.dispatchEvent(statsEvent(newValue));
     });
     expect(result.current.history).toEqual([]);
     expect(result.current.scoreboard).toEqual({ X: 0, O: 0, draws: 0 });
