@@ -41,6 +41,9 @@ one screen, or the computer at one of three levels.
   engine from the stored move list, never stored as pictures.
 - **Statistics** — results per mode, your win rate per computer level, average
   game length and your best winning streak, derived from the stored history.
+  Each record notes whether a move was taken back or a hint was shown; such
+  games are listed as played *with help* and are left out of the win rate and
+  the streak, so both measure the player's own play.
 
 ## The computer opponent
 
@@ -102,20 +105,16 @@ the engine, and the record is kept only if every move is legal and the final
 position reproduces the stored result (winner, draw, or the player who ran out
 of time). A record that contradicts its own moves is dropped.
 
-Two open tabs share one history: each tab listens for the `storage` event and
-adopts the other's changes before writing its own. A tab stores **only its own
-changes** — stats adopted from another tab are never written back, so a stale
-mix read while the other tab was mid-write cannot overwrite newer data — and
-identical writes are skipped. *Clear history* also bumps a
-dedicated `ttt-lab:cleared-at` key — an explicit clear signal — and only that
-signal makes the other tabs forget what their current game added to the score.
-A clear is never inferred from the history's content: corrupted data repaired
-to `[]` looks exactly like a cleared history. The cleared stats are written
-before the signal, so a tab reacting to it can only read the cleared state. Known limit: if two tabs finish a
-game within the few milliseconds it takes the event to arrive, the later write
-wins and one game is lost from the shared history. Closing that window needs a
-cross-tab lock around read–modify–write (e.g. the Web Locks API), which is more
-machinery than a local game history justifies.
+Two open tabs share one history. Every change a tab makes — recording a game,
+clearing — is a read–modify–write applied to the stats **as they are in storage
+at that moment** (`storage.ts#updateStoredStats`), never to the tab's own copy,
+and it runs under one Web Lock (`navigator.locks`, name `ttt-lab:stats`) shared
+by all tabs, so simultaneous updates are applied one after the other instead of
+the later one winning. Browsers without the Locks API run the update
+synchronously in a single task. Stats received through the `storage` event are
+only displayed, never written back. *Clear history* stores the empty stats and
+then bumps `ttt-lab:cleared-at`, an explicit clear signal; only that signal makes
+the other tabs forget what their current game added to the score.
 
 A game keeps its id when you rewind it. Finishing a rewound game therefore
 *replaces* its record (`stats.ts#recordMatch`) — the scoreboard moves the old
@@ -123,8 +122,9 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 165 tests in about 3 s; `npm run test:coverage` adds a coverage
-report and fails if `lib/game/*` drops below 95 % of lines.
+`npm test` runs 173 tests in about 3 s; `npm run test:coverage` adds a coverage
+report and fails if `lib/game/*` drops below its thresholds (95 % of lines). CI
+runs the coverage variant, so the threshold is enforced on every push.
 
 | File | What it pins down |
 |---|---|
@@ -143,19 +143,25 @@ All random games are seeded, so a failure replays exactly.
 
 ## Deployment
 
-GitHub Pages is configured as *Deploy from a branch* on `main` / root, so a
-release is the static export copied into the repository root of `main`.
+GitHub Pages is configured as *Deploy from a branch* on `main` / root: the live
+demo is the static export committed to the root of `main`.
 
-The CI workflow (`.github/workflows/ci.yml`) runs lint, typecheck, tests and the
-build on every pull request, on pushes to `ws01/**` branches and on demand, then builds that exact export and uploads it as the
-`pages-export` artifact — the deployment can be reproduced from the PR's code
-without a local machine. Publishing is unzipping the artifact into the root of
-`main`. Locally the same build is:
+The CI workflow (`.github/workflows/ci.yml`) runs lint, typecheck, the tests
+with the coverage threshold and the build on every pull request, on pushes to
+`ws01/**` branches and on demand. Its second job builds the Pages export and
+uploads it as the `pages-export` artifact, so the deployment can be reproduced
+from the PR's code. Publishing is replacing the root of `main` with that
+export. Locally the same build is:
 
 ```bash
+export NEXT_PUBLIC_BUILD_SHA=$(git rev-parse --short HEAD)
 GITHUB_PAGES=true PAGES_BASE_PATH=/2026-quitcode-01-agentic-engineering-hw npm run build
 touch out/.nojekyll
 ```
+
+**Which code is live?** The page header shows `Build <commit>` — the commit the
+export was built from (`dev` for local builds without the variable). Compare it
+with the branch head to know whether the demo is current.
 
 The Pages settings are opt-in through the environment, so plain `npm run build` and
 local development stay an ordinary Next.js build. Two details matter for the
