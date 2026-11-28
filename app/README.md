@@ -120,7 +120,8 @@ storage refuses writes (quota, blocked), the tab keeps the *changes* it could
 not store and re-applies them to the fresh stats on every update and on every
 storage event — so the session never loses a game, not even from the screen,
 and once storage works again its games land on top of whatever other tabs
-stored meanwhile. *Clear history* stores the empty stats and
+stored meanwhile. A clear — in this tab or announced by another — also discards
+the unsaved changes made before it, so cleared games never come back. *Clear history* stores the empty stats and
 then bumps `ttt-lab:cleared-at`, an explicit clear signal; only that signal makes
 the other tabs forget what their current game added to the score.
 
@@ -130,7 +131,7 @@ result out and the new one in, so each game counts exactly once.
 
 ## Tests
 
-`npm test` runs 179 tests in about 3 s; `npm run test:coverage` adds a coverage
+`npm test` runs 180 tests in about 3 s; `npm run test:coverage` adds a coverage
 report and fails if `lib/game/*` drops below its thresholds (95 % of lines). CI
 runs the coverage variant, so the threshold is enforced on every push. The AI
 speed budget (`__checks__/ai-speed.test.ts`, ≤ 250 ms per hard move on 5x5) is a
